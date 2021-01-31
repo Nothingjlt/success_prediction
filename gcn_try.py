@@ -135,7 +135,7 @@ def train_test_split():
 
 def load_input(parameters):
     graphs = pickle.load(open("./pickles/" + str(parameters["data_name"]) + "/dnc_candidate_one.pkl", "rb"))
-    # labels = pickle.load(open("./pickles/" + str(parameters["data_name"]) + "/labels.pkl", "rb"))
+    labels = pickle.load(open("./pickles/" + str(parameters["data_name"]) + "/dnc_with_labels_candidate_one.pkl", "rb"))
     feature_mx = [torch.eye(g.number_of_nodes()) for g in graphs]
     adjacency_matrices = [nx.adjacency_matrix(g).tocoo() for g in graphs]
     return graphs, labels, feature_mx, adjacency_matrices
@@ -143,7 +143,7 @@ def load_input(parameters):
 
 def run_trial(parameters):
     print(parameters)
-    graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
+    graphs, labels, feature_mx, adjacency_matrices = load_input(parameters) # TODO update labels
     train, test, validation = train_test_split()
 
     out = []
