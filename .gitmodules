@@ -1,0 +1,3 @@
+[submodule "lib/graph_measures"]
+	path = lib/graph_measures
+	url = https://github.com/louzounlab/graph-measures.git
