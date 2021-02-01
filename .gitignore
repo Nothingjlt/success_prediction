@@ -1,2 +1,9 @@
+# General windows files
 [Dd]esktop.ini
+
+# VSCode additions
 .vscode
+*.code-workspace
+
+# out folder
+/out
