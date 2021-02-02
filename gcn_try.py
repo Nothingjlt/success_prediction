@@ -25,19 +25,21 @@ DEFAULT_LABEL_TO_LEARN = "kcore"
 
 DEFAULT_OUT_DIR = "out"
 
+# TODO add GCN+LSTM class
+
 
 class GCNNet(nn.Module):
-    def __init__(self, num_features, num_classes, h_layers=[16], dropout=0.5):
+    def __init__(self, num_features, gcn_latent_dim, h_layers=[16], dropout=0.5):
         super(GCNNet, self).__init__()
         self._conv1 = GCNConv(num_features, h_layers[0])
-        self._conv2 = GCNConv(h_layers[0], num_classes)
+        self._conv2 = GCNConv(h_layers[0], gcn_latent_dim)
         self._dropout = dropout
         self._activation_func = F.leaky_relu
         # self._device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def forward(self, Data):
-        x, adj_mx = Data.x.to(self._device), Data.edge_index.to(self._device)
+    def forward(self, data):
+        x, adj_mx = data.x.to(self._device), data.edge_index.to(self._device)
         x = self._conv1(x, adj_mx)
         x = self._activation_func(x)
         x = F.dropout(x, p=self._dropout)
@@ -50,100 +52,134 @@ class Model:
     def __init__(self, parameters):
         self._params = parameters
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self._data = None
+        self._gcn_data_list = None
         self._criterion = nn.MSELoss()
         self._accuracy_metric = nn.L1Loss()
         self.activation = nn.ReLU
 
     def load_data(
         self,
-        gnx,
-        labels,
+        gnxs: list,
         feature_matrix,
+        labels,
+        learned_label: str,
         train,
         test,
         validation,
     ):
-        nodes = sorted(gnx.nodes)
-        node_id_to_idx = {x: i for i, x in enumerate(nodes)}
-        idx_to_node_id = {i: x for i, x in enumerate(nodes)}
-        x = torch.tensor(
-            np.vstack([feature_matrix[node_id_to_idx[node]] for node in nodes]),
-            device=self._device,
-        )
-        edges = torch.tensor(
-            np.vstack(
-                [
-                    [node_id_to_idx[x[0]] for x in gnx.edges],
-                    [node_id_to_idx[x[1]] for x in gnx.edges],
-                ]
-            ),
-            dtype=torch.long,  # Required by torch_geometric.data.Data
-            device=self._device,
-        )
+        self._gcn_data_list = []
 
-        self._data = Data(x=x, edge_index=edges)
-        self._data.train_idx = [node_id_to_idx[node] for node in train]
-        self._data.test_idx = [node_id_to_idx[node] for node in test]
-        self._data.validation_idx = [node_id_to_idx[node] for node in validation]
+        all_nodes_set = set()
+        for gnx in gnxs:
+            all_nodes_set.update(gnx.nodes())
+        all_nodes_list = sorted(all_nodes_set)
 
-        self._data.train_labels = torch.tensor(
-            [labels.features[idx_to_node_id[i]] for i in self._data.train_idx],
+        self._num_of_nodes = len(all_nodes_list)
+
+        node_id_to_idx = {x: i for i, x in enumerate(all_nodes_list)}
+        idx_to_node_id = {i: x for i, x in enumerate(all_nodes_list)}
+
+        for gnx in gnxs:
+            gnx.add_nodes_from(all_nodes_set)
+            nodes = gnx.nodes()
+            x = torch.tensor(
+                np.vstack([feature_matrix[node_id_to_idx[node]] for node in nodes]),
+                device=self._device,
+            )
+
+            edges = torch.tensor(
+                np.vstack(
+                    [
+                        [node_id_to_idx[x[0]] for x in gnx.edges],
+                        [node_id_to_idx[x[1]] for x in gnx.edges],
+                    ]
+                ),
+                dtype=torch.long,  # Required by torch_geometric.data.Data
+                device=self._device,
+            )
+
+            d = Data(x=x, edge_index=edges)
+
+            self._gcn_data_list.append(d)
+
+        self.train_idx = [node_id_to_idx[node] for node in train]
+        self.test_idx = [node_id_to_idx[node] for node in test]
+        self.validation_idx = [node_id_to_idx[node] for node in validation]
+
+        self.train_labels = torch.tensor(
+            [labels[learned_label].features[idx_to_node_id[i]] for i in self.train_idx],
             dtype=torch.float,
             device=self._device,
         )
-        self._data.test_labels = torch.tensor(
-            [labels.features[idx_to_node_id[i]] for i in self._data.test_idx],
+        self.test_labels = torch.tensor(
+            [labels[learned_label].features[idx_to_node_id[i]] for i in self.test_idx],
             dtype=torch.float,
             device=self._device,
         )
-        self._data.validation_labels = torch.tensor(
-            [labels.features[idx_to_node_id[i]] for i in self._data.validation_idx],
+        self.validation_labels = torch.tensor(
+            [
+                labels[learned_label].features[idx_to_node_id[i]]
+                for i in self.validation_idx
+            ],
             dtype=torch.float,
             device=self._device,
         )
 
-        self._num_features = x.shape[1]
-        self._num_classes = self._params["num_of_classes"]
-        self._net = self._params["net"](
+        self.train_idx = [node_id_to_idx[node] for node in train]
+        self.test_idx = [node_id_to_idx[node] for node in test]
+        self.validation_idx = [node_id_to_idx[node] for node in validation]
+
+        self._num_features = feature_matrix.shape[1]
+        self._gcn_latent_dim = self._params["gcn_latent_dim"]
+        gcn_net = self._params["net"](
             self._num_features,
-            self._num_classes,
-            h_layers=self._params["hidden_sizes"],
-            dropout=self._params["dropout_rate"],
+            self._gcn_latent_dim,
+            h_layers=self._params["gcn_hidden_sizes"],
+            dropout=self._params["gcn_dropout_rate"],
         )
-        self._net.to(self._device)
+        lstm_net = nn.LSTM(
+            input_size=self._gcn_latent_dim,
+            hidden_size=self._params["lstm_hidden_size"],
+            dropout=self._params["lstm_dropout_rate"],
+        )
+        self._gcn_net = gcn_net.to(self._device)
+        self._lstm_net = lstm_net.to(self._device)
+        self._nn_module_list = nn.ModuleList(
+            [self._gcn_net, self._lstm_net]
+        )  # TODO consider using ModuleList
         self._optimizer = optim.Adam(
-            self._net.parameters(),
+            list(self._gcn_net.parameters()) + list(self._lstm_net.parameters()),
             lr=self._params["learning_rate"],
             weight_decay=self._params["weight_decay"],
         )
         self.out = []
-        return self._data
+        return self._gcn_data_list
 
     @property
     def data(self):
-        return self._data.clone()
+        return self._gcn_data_list.clone()
 
     def _ce_loss(self, predicted, target):
         return -(target * torch.log(predicted)).sum(dim=1).mean().to(self._device)
 
     def evaluate(self, evaluation_set: str = "test"):
-        self._net.eval()
+        self._gcn_net.eval()
+        self._lstm_net.eval()
 
         if evaluation_set == "test":
-            evaluation_set_idx = self._data.test_idx
-            evaluation_set_labels = self._data.test_labels
+            evaluation_set_idx = self._gcn_data_list.test_idx
+            evaluation_set_labels = self._gcn_data_list.test_labels
         elif evaluation_set == "validation":
-            evaluation_set_idx = self._data.validation_idx
-            evaluation_set_labels = self._data.validation_labels
+            evaluation_set_idx = self._gcn_data_list.validation_idx
+            evaluation_set_labels = self._gcn_data_list.validation_labels
         elif evaluation_set == "train":
-            evaluation_set_idx = self._data.train_idx
-            evaluation_set_labels = self._data.train_labels
+            evaluation_set_idx = self._gcn_data_list.train_idx
+            evaluation_set_labels = self._gcn_data_list.train_labels
         else:
             print(f"Invalid evaluation set: {evaluation_set}")
             return
 
-        val_output = self._net(self._data)
+        val_output = self._gcn_net(self._gcn_data_list)
         val_output = val_output[evaluation_set_idx, :].reshape(-1)
         val_loss = self._criterion(val_output, evaluation_set_labels)
         accuracy = self._accuracy_metric(val_output, evaluation_set_labels.float())
@@ -153,20 +189,38 @@ class Model:
         train_loss, val_loss, train_acc, val_acc, val_loss_list = [], [], [], [], []
 
         for epoch in range(int(self._params["epochs"])):
-            self._net.train()
+            self._gcn_net.train()
+            self._lstm_net.train()
             self._optimizer.zero_grad()
-            output = self._net(self._data)
-            output = output[self._data.train_idx, :].reshape(-1)
-            loss = self._criterion(output, self._data.train_labels)
-            train_accuracy = self._accuracy_metric(output, self._data.train_labels.float())
+            gcn_output = torch.empty(
+                size=(1, self._num_of_nodes, self._gcn_latent_dim)
+            ).to(self._device)
+            for d in self._gcn_data_list:
+                gcn_output = torch.cat(
+                    (gcn_output, self._gcn_net(d)[None, :, :]), dim=0
+                )
+            gcn_output = gcn_output[1:, :, :]
+            gcn_output = gcn_output[:, self.train_idx :, :]
+
+            lstm_output, (lstm_hn, lstm_cn) = self._lstm_net(
+                gcn_output
+            )  # TODO what is the LSTM output and how do we perform regression on it?
+
+            loss = self._criterion(gcn_output, self._gcn_data_list.train_labels)
+            train_accuracy = self._accuracy_metric(
+                gcn_output, self._gcn_data_list.train_labels.float()
+            )
             train_loss.append(loss.data.cpu().item())
             train_acc.append(train_accuracy.data.cpu().item())
             loss.backward()
             self._optimizer.step()
 
             # valid
-            self._net.eval()
-            val_loss, validation_accuracy = self.evaluate("validation")  # Evaluate validation set
+            self._gcn_net.eval()
+            self._lstm_net.eval()
+            val_loss, validation_accuracy = self.evaluate(
+                "validation"
+            )  # Evaluate validation set
             # val_loss_list.append(val_loss.data.cpu().item())
             # val_acc.append(validation_accuracy.data.cpu().item())
 
@@ -476,7 +530,10 @@ def load_input(parameters):
     )
     # labels = pickle.load(open("./pickles/" + str(parameters["data_name"]) + "/dnc_with_labels_candidate_one.pkl", "rb"))
     labels = get_labels_from_graphs(graphs)
-    feature_mx = [torch.eye(g.number_of_nodes()) for g in graphs]
+    all_nodes = set()
+    for g in graphs:
+        all_nodes.update(g.nodes())
+    feature_mx = torch.eye(len(all_nodes))
     adjacency_matrices = [nx.adjacency_matrix(g).tocoo() for g in graphs]
     return graphs, labels, feature_mx, adjacency_matrices
 
@@ -488,14 +545,29 @@ def run_trial(parameters):
 
     out = []
     total_out = []
-    for i, (g, l, f) in enumerate(zip(graphs, labels, feature_mx)):
-        print(f"Running graph index {i}")
-        model = Model(parameters)
-        model.load_data(g, l[parameters["learned_label"]], f, train, test, validation)
-        model.train()
-        all_out, out_test = model.evaluate()
-        out.append(out_test)
-        total_out.append(all_out)
+
+    model = Model(parameters)
+    model.load_data(
+        graphs[:-1],
+        feature_mx,
+        labels[-1],
+        parameters["learned_label"],
+        train,
+        test,
+        validation,
+    )
+    model.train()
+
+    all_out, out_test = model.evaluate()
+
+    # for i, (g, l, f) in enumerate(zip(graphs, labels, feature_mxs)):
+    #     print(f"Running graph index {i}")
+    #     model = Model(parameters)
+    #     model.load_data(g, l[parameters["learned_label"]], f, train, test, validation)
+    #     model.train()
+    #     all_out, out_test = model.evaluate()
+    #     out.append(out_test)
+    #     total_out.append(all_out)
 
 
 if __name__ == "__main__":
@@ -504,11 +576,13 @@ if __name__ == "__main__":
         "net": GCNNet,
         "epochs": 100,
         "activation": "relu",
-        "dropout_rate": 0.3,
-        "hidden_sizes": [10],
+        "gcn_dropout_rate": 0.3,
+        "lstm_dropout_rate": 0.3,
+        "gcn_hidden_sizes": [10],
         "learning_rate": 0.03,
         "weight_decay": 0.005,
-        "num_of_classes": 1,
+        "gcn_latent_dim": 8,
+        "lstm_hidden_size": 12,
         "learned_label": DEFAULT_LABEL_TO_LEARN,
     }
     run_trial(params_)
