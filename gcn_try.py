@@ -12,13 +12,13 @@ from lib.graph_measures.features_meta.features_meta import *
 from lib.graph_measures.features_infra.graph_features import GraphFeatures
 
 DEFAULT_FEATURES_META = {
-    "betweenness_centrality": FeatureMeta(
-        BetweennessCentralityCalculator, {"betweenness"}
-    ),
+    # "betweenness_centrality": FeatureMeta(
+    #     BetweennessCentralityCalculator, {"betweenness"}
+    # ),
     "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
-    "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
-    "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
-    "general": FeatureMeta(GeneralCalculator, {"gen"}),
+    # "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
+    # "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
+    # "general": FeatureMeta(GeneralCalculator, {"gen"}),
 }
 
 DEFAULT_LABEL_TO_LEARN = "kcore"
@@ -51,7 +51,7 @@ class Model:
         self._params = parameters
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._data = None
-        self._criterion = self._ce_loss
+        self._criterion = nn.CrossEntropyLoss() #self._ce_loss
         self.activation = nn.ReLU
 
     def load_data(
@@ -88,17 +88,17 @@ class Model:
 
         self._data.train_labels = torch.tensor(
             [labels.features[idx_to_node_id[i]] for i in self._data.train_idx],
-            dtype=torch.double,
+            dtype=torch.long,
             device=self._device,
         )
         self._data.test_labels = torch.tensor(
             [labels.features[idx_to_node_id[i]] for i in self._data.test_idx],
-            dtype=torch.double,
+            dtype=torch.long,
             device=self._device,
         )
         self._data.validation_labels = torch.tensor(
             [labels.features[idx_to_node_id[i]] for i in self._data.validation_idx],
-            dtype=torch.double,
+            dtype=torch.long,
             device=self._device,
         )
 
@@ -126,20 +126,32 @@ class Model:
     def _ce_loss(self, predicted, target):
         return -(target * torch.log(predicted)).sum(dim=1).mean().to(self._device)
 
-    def train(self):
-        self._net.train()
+    def evaluate(self, test_set: bool = True):
+        self._net.eval()
+        evalution_set_idx = (
+            self._data.test_idx if test_set else self._data.validation_idx
+        )
+        evalution_set_labels = (
+            self._data.test_labels if test_set else self._data.validation_labels
+        )
+        val_output = self._net(self._data)
+        val_output = val_output[evalution_set_idx, :]
+        val_loss = self._criterion(val_output, evalution_set_labels)
+        mse_for_acc_val = torch.nn.MSELoss()
+        mse_for_acc_val = mse_for_acc_val(val_output, evalution_set_labels.float())
+        return val_loss, mse_for_acc_val
 
-        train_loss, val_loss, train_acc, val_acc = [], [], [], []
+    def train(self):
+        train_loss, val_loss, train_acc, val_acc, val_loss_list = [], [], [], [], []
 
         for epoch in range(int(self._params["epochs"])):
+            self._net.train()
             self._optimizer.zero_grad()
             output = self._net(self._data)
             output = output[self._data.train_idx, :]
             loss = self._criterion(output, self._data.train_labels)
             mse_for_acc = torch.nn.MSELoss()
-            mse_for_acc = mse_for_acc(
-                output, self._data.train_labels.float()
-            )
+            mse_for_acc = mse_for_acc(output, self._data.train_labels.float())
             train_loss.append(loss.data.cpu().item())
             train_acc.append(mse_for_acc.data.cpu().item())
             loss.backward()
@@ -147,24 +159,14 @@ class Model:
 
             # valid
             self._net.eval()
-            val_output = self._net(self._data)
-            val_output = val_output[self._data.validation_idx, :]
-            val_loss = self._criterion(
-                val_output, self._data.validation_labels
-            )
-            mse_for_acc_val = torch.nn.MSELoss()
-            mse_for_acc_val = mse_for_acc_val(
-                val_output, self._data.validation_labels.float()
-            )
-            val_loss.append(val_loss.data.cpu().item())
+            val_loss, mse_for_acc_val = self.evaluate(False)  # Evaluate validation set
+            val_loss_list.append(val_loss.data.cpu().item())
             val_acc.append(mse_for_acc_val.data.cpu().item())
 
             print(
-                "epoch: {}, train loss: {:.5f}, test loss:{:.5f}, train mse acc: {:.5f}, test mse acc: {:.5f} ".format(
-                    epoch + 1, loss, val_loss, mse_for_acc, mse_for_acc_val
-                )
+                f"epoch: {epoch + 1}, train loss: {loss:.5f}, validation loss:{val_loss:.5f}, "
+                f"train mse acc: {mse_for_acc:.5f}, validation mse acc: {mse_for_acc_val:.5f} "
             )
-            self._net.train()
         return output
 
 
@@ -437,7 +439,7 @@ def train_test_split():
         2006,
         2010,
         2027,
-    ]
+    ]  # TODO take code from Jupyter notebook to calc this on the fly.
 
     print(len(indices))
     val_test_inds = np.random.choice(indices, round(len(indices) * 0.8), replace=False)
@@ -447,8 +449,10 @@ def train_test_split():
 
 
 def get_labels_from_graphs(
-    graphs, features_meta: dict = DEFAULT_FEATURES_META, dir_path: str = DEFAULT_OUT_DIR
-):
+    graphs: list,
+    features_meta: dict = DEFAULT_FEATURES_META,
+    dir_path: str = DEFAULT_OUT_DIR,
+) -> list:
     labels = []
     for g in graphs:
         features = GraphFeatures(g, features_meta, dir_path)
