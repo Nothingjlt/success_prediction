@@ -32,7 +32,7 @@ class GCNNet(nn.Module):
         self._conv1 = GCNConv(num_features, h_layers[0])
         self._conv2 = GCNConv(h_layers[0], num_classes)
         self._dropout = dropout
-        self._activation_func = F.relu
+        self._activation_func = F.leaky_relu
         # self._device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -42,7 +42,7 @@ class GCNNet(nn.Module):
         x = self._activation_func(x)
         x = F.dropout(x, p=self._dropout)
         x = self._conv2(x, adj_mx)
-        # x = F.softmax(x, dim=1)
+        # x = F.softmax(x, dim=1)  # comment out by Yoram's suggestion
         return x
 
 
@@ -51,7 +51,8 @@ class Model:
         self._params = parameters
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._data = None
-        self._criterion = nn.CrossEntropyLoss() #self._ce_loss
+        self._criterion = nn.MSELoss()
+        self._accuracy_metric = nn.L1Loss()
         self.activation = nn.ReLU
 
     def load_data(
@@ -77,7 +78,7 @@ class Model:
                     [node_id_to_idx[x[1]] for x in gnx.edges],
                 ]
             ),
-            dtype=torch.long,
+            dtype=torch.long,  # Required by torch_geometric.data.Data
             device=self._device,
         )
 
@@ -88,17 +89,17 @@ class Model:
 
         self._data.train_labels = torch.tensor(
             [labels.features[idx_to_node_id[i]] for i in self._data.train_idx],
-            dtype=torch.long,
+            dtype=torch.float,
             device=self._device,
         )
         self._data.test_labels = torch.tensor(
             [labels.features[idx_to_node_id[i]] for i in self._data.test_idx],
-            dtype=torch.long,
+            dtype=torch.float,
             device=self._device,
         )
         self._data.validation_labels = torch.tensor(
             [labels.features[idx_to_node_id[i]] for i in self._data.validation_idx],
-            dtype=torch.long,
+            dtype=torch.float,
             device=self._device,
         )
 
@@ -126,20 +127,27 @@ class Model:
     def _ce_loss(self, predicted, target):
         return -(target * torch.log(predicted)).sum(dim=1).mean().to(self._device)
 
-    def evaluate(self, test_set: bool = True):
+    def evaluate(self, evaluation_set: str = "test"):
         self._net.eval()
-        evalution_set_idx = (
-            self._data.test_idx if test_set else self._data.validation_idx
-        )
-        evalution_set_labels = (
-            self._data.test_labels if test_set else self._data.validation_labels
-        )
+
+        if evaluation_set == "test":
+            evaluation_set_idx = self._data.test_idx
+            evaluation_set_labels = self._data.test_labels
+        elif evaluation_set == "validation":
+            evaluation_set_idx = self._data.validation_idx
+            evaluation_set_labels = self._data.validation_labels
+        elif evaluation_set == "train":
+            evaluation_set_idx = self._data.train_idx
+            evaluation_set_labels = self._data.train_labels
+        else:
+            print(f"Invalid evaluation set: {evaluation_set}")
+            return
+
         val_output = self._net(self._data)
-        val_output = val_output[evalution_set_idx, :]
-        val_loss = self._criterion(val_output, evalution_set_labels)
-        mse_for_acc_val = torch.nn.MSELoss()
-        mse_for_acc_val = mse_for_acc_val(val_output, evalution_set_labels.float())
-        return val_loss, mse_for_acc_val
+        val_output = val_output[evaluation_set_idx, :].reshape(-1)
+        val_loss = self._criterion(val_output, evaluation_set_labels)
+        accuracy = self._accuracy_metric(val_output, evaluation_set_labels.float())
+        return val_loss, accuracy
 
     def train(self):
         train_loss, val_loss, train_acc, val_acc, val_loss_list = [], [], [], [], []
@@ -148,26 +156,25 @@ class Model:
             self._net.train()
             self._optimizer.zero_grad()
             output = self._net(self._data)
-            output = output[self._data.train_idx, :]
+            output = output[self._data.train_idx, :].reshape(-1)
             loss = self._criterion(output, self._data.train_labels)
-            mse_for_acc = torch.nn.MSELoss()
-            mse_for_acc = mse_for_acc(output, self._data.train_labels.float())
+            train_accuracy = self._accuracy_metric(output, self._data.train_labels.float())
             train_loss.append(loss.data.cpu().item())
-            train_acc.append(mse_for_acc.data.cpu().item())
+            train_acc.append(train_accuracy.data.cpu().item())
             loss.backward()
             self._optimizer.step()
 
             # valid
             self._net.eval()
-            val_loss, mse_for_acc_val = self.evaluate(False)  # Evaluate validation set
-            val_loss_list.append(val_loss.data.cpu().item())
-            val_acc.append(mse_for_acc_val.data.cpu().item())
+            val_loss, validation_accuracy = self.evaluate("validation")  # Evaluate validation set
+            # val_loss_list.append(val_loss.data.cpu().item())
+            # val_acc.append(validation_accuracy.data.cpu().item())
 
             print(
                 f"epoch: {epoch + 1}, train loss: {loss:.5f}, validation loss:{val_loss:.5f}, "
-                f"train mse acc: {mse_for_acc:.5f}, validation mse acc: {mse_for_acc_val:.5f} "
+                f"train accuracy: {train_accuracy:.5f}, validation accuracy: {validation_accuracy:.5f} "
             )
-        return output
+        return
 
 
 def train_test_split():
@@ -442,7 +449,7 @@ def train_test_split():
     ]  # TODO take code from Jupyter notebook to calc this on the fly.
 
     print(len(indices))
-    val_test_inds = np.random.choice(indices, round(len(indices) * 0.8), replace=False)
+    val_test_inds = np.random.choice(indices, round(len(indices) * 0.2), replace=False)
     test, validation = np.array_split(val_test_inds, 2)
     train = np.setdiff1d(np.array(indices), val_test_inds)
     return train, test, validation
@@ -480,13 +487,13 @@ def run_trial(parameters):
     train, test, validation = train_test_split()
 
     out = []
-    out_train = []
     total_out = []
-    for g, l, f in zip(graphs, labels, feature_mx):
+    for i, (g, l, f) in enumerate(zip(graphs, labels, feature_mx)):
+        print(f"Running graph index {i}")
         model = Model(parameters)
         model.load_data(g, l[parameters["learned_label"]], f, train, test, validation)
-        out_train.append(model.train())
-        all_out, out_test = model.test()
+        model.train()
+        all_out, out_test = model.evaluate()
         out.append(out_test)
         total_out.append(all_out)
 
@@ -495,7 +502,7 @@ if __name__ == "__main__":
     params_ = {
         "data_name": "dnc",
         "net": GCNNet,
-        "epochs": 30,
+        "epochs": 100,
         "activation": "relu",
         "dropout_rate": 0.3,
         "hidden_sizes": [10],
