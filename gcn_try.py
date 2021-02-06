@@ -25,8 +25,6 @@ DEFAULT_LABEL_TO_LEARN = "kcore"
 
 DEFAULT_OUT_DIR = "out"
 
-# TODO add GCN+LSTM class
-
 
 class GCNNet(nn.Module):
     def __init__(self, num_features, gcn_latent_dim, h_layers=[16], dropout=0.5):
@@ -35,7 +33,6 @@ class GCNNet(nn.Module):
         self._conv2 = GCNConv(h_layers[0], gcn_latent_dim)
         self._dropout = dropout
         self._activation_func = F.leaky_relu
-        # self._device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def forward(self, data):
@@ -44,8 +41,82 @@ class GCNNet(nn.Module):
         x = self._activation_func(x)
         x = F.dropout(x, p=self._dropout)
         x = self._conv2(x, adj_mx)
-        # x = F.softmax(x, dim=1)  # comment out by Yoram's suggestion
         return x
+
+
+class GCNRNNNet(nn.Module):
+    def __init__(
+        self,
+        num_of_features: int,
+        gcn_latent_dim: int,
+        gcn_hidden_sizes: list,
+        gcn_dropout_rate: float,
+        lstm_hidden_size: int,
+        lstm_num_layers: int,
+        lstm_dropout_rate: float,
+    ):
+        super(GCNRNNNet, self).__init__()
+        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self._num_of_features = num_of_features
+        self._gcn_latent_dim = gcn_latent_dim
+        self._gcn_hidden_sizes = gcn_hidden_sizes
+        self._gcn_dropout_rate = gcn_dropout_rate
+        self._lstm_hidden_size = lstm_hidden_size
+        self._lstm_dropout_rate = lstm_dropout_rate
+        gcn_net = GCNNet(
+            num_of_features,
+            gcn_latent_dim,
+            gcn_hidden_sizes,
+            gcn_dropout_rate,
+        ).to(self._device)
+        lstm_net = nn.LSTM(
+            gcn_latent_dim,
+            lstm_hidden_size,
+            lstm_num_layers,
+            dropout=lstm_dropout_rate,
+        ).to(self._device)
+        head_net = nn.Linear(2 * lstm_num_layers * lstm_hidden_size, 1)
+
+        self._modules_dict = nn.ModuleDict(
+            {"gcn_net": gcn_net, "lstm_net": lstm_net, "head_net": head_net}
+        ).to(self._device)
+
+        return
+
+    def forward(self, data: list, idx_subset: list):
+        gcn_output = torch.empty(size=(1, data[0].num_nodes, self._gcn_latent_dim)).to(
+            self._device
+        )
+        for d in data:
+            gcn_output = torch.cat(
+                (gcn_output, self._modules_dict["gcn_net"](d)[None, :, :]), dim=0
+            )
+        gcn_output = gcn_output[1:, :, :]
+        gcn_output_only_training = gcn_output[:, idx_subset, :]
+
+        lstm_output, (lstm_hn, lstm_cn) = self._modules_dict["lstm_net"](
+            gcn_output_only_training
+        )
+
+        lstm_hn_shape = lstm_hn.shape
+        lstm_cn_shape = lstm_cn.shape
+
+        head_output = self._modules_dict["head_net"](
+            torch.cat(
+                (
+                    lstm_hn.reshape(
+                        (lstm_hn_shape[1], lstm_hn_shape[0] * lstm_hn_shape[2])
+                    ),
+                    lstm_cn.reshape(
+                        (lstm_cn_shape[1], lstm_cn_shape[0] * lstm_cn_shape[2])
+                    ),
+                ),
+                dim=1,
+            )
+        )
+
+        return head_output.reshape(-1)
 
 
 class Model:
@@ -55,7 +126,6 @@ class Model:
         self._gcn_data_list = None
         self._criterion = nn.MSELoss()
         self._accuracy_metric = nn.L1Loss()
-        self.activation = nn.ReLU
 
     def load_data(
         self,
@@ -125,34 +195,31 @@ class Model:
             device=self._device,
         )
 
+        # Special case where both in_deg and out_deg are learned, reduce to deg.
+        if learned_label == "general":
+            self.train_labels = self.train_labels.sum(dim=1)
+            self.test_labels = self.test_labels.sum(dim=1)
+            self.validation_labels = self.validation_labels.sum(dim=1)
+
         self.train_idx = [node_id_to_idx[node] for node in train]
         self.test_idx = [node_id_to_idx[node] for node in test]
         self.validation_idx = [node_id_to_idx[node] for node in validation]
 
-        self._num_features = feature_matrix.shape[1]
-        self._gcn_latent_dim = self._params["gcn_latent_dim"]
-        gcn_net = self._params["net"](
-            self._num_features,
-            self._gcn_latent_dim,
-            h_layers=self._params["gcn_hidden_sizes"],
-            dropout=self._params["gcn_dropout_rate"],
+        self._gcn_rnn_net = GCNRNNNet(
+            feature_matrix.shape[1],
+            self._params["gcn_latent_dim"],
+            self._params["gcn_hidden_sizes"],
+            self._params["gcn_dropout_rate"],
+            self._params["lstm_hidden_size"],
+            self._params["lstm_num_layers"],
+            self._params["lstm_dropout_rate"],
         )
-        lstm_net = nn.LSTM(
-            input_size=self._gcn_latent_dim,
-            hidden_size=self._params["lstm_hidden_size"],
-            dropout=self._params["lstm_dropout_rate"],
-        )
-        self._gcn_net = gcn_net.to(self._device)
-        self._lstm_net = lstm_net.to(self._device)
-        self._nn_module_list = nn.ModuleList(
-            [self._gcn_net, self._lstm_net]
-        )  # TODO consider using ModuleList
+
         self._optimizer = optim.Adam(
-            list(self._gcn_net.parameters()) + list(self._lstm_net.parameters()),
+            self._gcn_rnn_net.parameters(),
             lr=self._params["learning_rate"],
             weight_decay=self._params["weight_decay"],
         )
-        self.out = []
         return self._gcn_data_list
 
     @property
@@ -163,70 +230,58 @@ class Model:
         return -(target * torch.log(predicted)).sum(dim=1).mean().to(self._device)
 
     def evaluate(self, evaluation_set: str = "test"):
-        self._gcn_net.eval()
-        self._lstm_net.eval()
+        self._gcn_rnn_net.eval()
 
         if evaluation_set == "test":
-            evaluation_set_idx = self._gcn_data_list.test_idx
-            evaluation_set_labels = self._gcn_data_list.test_labels
+            evaluation_set_idx = self.test_idx
+            evaluation_set_labels = self.test_labels
         elif evaluation_set == "validation":
-            evaluation_set_idx = self._gcn_data_list.validation_idx
-            evaluation_set_labels = self._gcn_data_list.validation_labels
+            evaluation_set_idx = self.validation_idx
+            evaluation_set_labels = self.validation_labels
         elif evaluation_set == "train":
-            evaluation_set_idx = self._gcn_data_list.train_idx
-            evaluation_set_labels = self._gcn_data_list.train_labels
+            evaluation_set_idx = self.train_idx
+            evaluation_set_labels = self.train_labels
         else:
             print(f"Invalid evaluation set: {evaluation_set}")
             return
 
-        val_output = self._gcn_net(self._gcn_data_list)
-        val_output = val_output[evaluation_set_idx, :].reshape(-1)
+        val_output = self._gcn_rnn_net(self._gcn_data_list, evaluation_set_idx)
         val_loss = self._criterion(val_output, evaluation_set_labels)
         accuracy = self._accuracy_metric(val_output, evaluation_set_labels.float())
+
         return val_loss, accuracy
 
     def train(self):
-        train_loss, val_loss, train_acc, val_acc, val_loss_list = [], [], [], [], []
+        train_loss, val_loss, train_acc, val_accuracy_list, val_loss_list = (
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
 
         for epoch in range(int(self._params["epochs"])):
-            self._gcn_net.train()
-            self._lstm_net.train()
+            self._gcn_rnn_net.train()
             self._optimizer.zero_grad()
-            gcn_output = torch.empty(
-                size=(1, self._num_of_nodes, self._gcn_latent_dim)
-            ).to(self._device)
-            for d in self._gcn_data_list:
-                gcn_output = torch.cat(
-                    (gcn_output, self._gcn_net(d)[None, :, :]), dim=0
-                )
-            gcn_output = gcn_output[1:, :, :]
-            gcn_output = gcn_output[:, self.train_idx :, :]
 
-            lstm_output, (lstm_hn, lstm_cn) = self._lstm_net(
-                gcn_output
-            )  # TODO what is the LSTM output and how do we perform regression on it?
+            output = self._gcn_rnn_net(self._gcn_data_list, self.train_idx)
 
-            loss = self._criterion(gcn_output, self._gcn_data_list.train_labels)
-            train_accuracy = self._accuracy_metric(
-                gcn_output, self._gcn_data_list.train_labels.float()
-            )
+            loss = self._criterion(output, self.train_labels)
+            train_accuracy = self._accuracy_metric(output, self.train_labels.float())
             train_loss.append(loss.data.cpu().item())
             train_acc.append(train_accuracy.data.cpu().item())
             loss.backward()
             self._optimizer.step()
 
-            # valid
-            self._gcn_net.eval()
-            self._lstm_net.eval()
-            val_loss, validation_accuracy = self.evaluate(
-                "validation"
-            )  # Evaluate validation set
-            # val_loss_list.append(val_loss.data.cpu().item())
-            # val_acc.append(validation_accuracy.data.cpu().item())
+            # Evaluate validation set
+            self._gcn_rnn_net.eval()
+            val_loss, validation_accuracy = self.evaluate("validation")
+            val_loss_list.append(val_loss.data.cpu().item())
+            val_accuracy_list.append(validation_accuracy.data.cpu().item())
 
             print(
-                f"epoch: {epoch + 1}, train loss: {loss:.5f}, validation loss:{val_loss:.5f}, "
-                f"train accuracy: {train_accuracy:.5f}, validation accuracy: {validation_accuracy:.5f} "
+                f"epoch: {epoch + 1}, train loss: {train_loss[-1]:.5f}, validation loss:{val_loss_list[-1]:.5f}, "
+                f"train accuracy: {train_acc[-1]:.5f}, validation accuracy: {val_accuracy_list[-1]:.5f} "
             )
         return
 
@@ -522,7 +577,7 @@ def get_labels_from_graphs(
     return labels
 
 
-def load_input(parameters):
+def load_input(parameters:dict):
     graphs = pickle.load(
         open(
             "./pickles/" + str(parameters["data_name"]) + "/dnc_candidate_two.pkl", "rb"
@@ -560,14 +615,10 @@ def run_trial(parameters):
 
     all_out, out_test = model.evaluate()
 
-    # for i, (g, l, f) in enumerate(zip(graphs, labels, feature_mxs)):
-    #     print(f"Running graph index {i}")
-    #     model = Model(parameters)
-    #     model.load_data(g, l[parameters["learned_label"]], f, train, test, validation)
-    #     model.train()
-    #     all_out, out_test = model.evaluate()
-    #     out.append(out_test)
-    #     total_out.append(all_out)
+    print(
+        "\n"
+        f"test loss: {all_out.data.item():.5f}, test_accuracy: {out_test.data.item():.5f}"
+    )
 
 
 if __name__ == "__main__":
@@ -575,7 +626,6 @@ if __name__ == "__main__":
         "data_name": "dnc",
         "net": GCNNet,
         "epochs": 100,
-        "activation": "relu",
         "gcn_dropout_rate": 0.3,
         "lstm_dropout_rate": 0.3,
         "gcn_hidden_sizes": [10],
@@ -583,6 +633,7 @@ if __name__ == "__main__":
         "weight_decay": 0.005,
         "gcn_latent_dim": 8,
         "lstm_hidden_size": 12,
+        "lstm_num_layers": 1,
         "learned_label": DEFAULT_LABEL_TO_LEARN,
     }
     run_trial(params_)
