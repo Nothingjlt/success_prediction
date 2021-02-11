@@ -1,13 +1,12 @@
 import networkx as nx
 import torch
-import os
 import pickle
 import numpy as np
 from torch_geometric.data import Data
 from torch import nn, optim
 from torch_geometric.nn import GCNConv
 import torch.nn.functional as F
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
 from lib.graph_measures.features_meta.features_meta import *
 from lib.graph_measures.features_infra.graph_features import GraphFeatures
 
@@ -64,18 +63,8 @@ class GCNRNNNet(nn.Module):
         self._gcn_dropout_rate = gcn_dropout_rate
         self._lstm_hidden_size = lstm_hidden_size
         self._lstm_dropout_rate = lstm_dropout_rate
-        gcn_net = GCNNet(
-            num_of_features,
-            gcn_latent_dim,
-            gcn_hidden_sizes,
-            gcn_dropout_rate,
-        ).to(self._device)
-        lstm_net = nn.LSTM(
-            gcn_latent_dim,
-            lstm_hidden_size,
-            lstm_num_layers,
-            dropout=lstm_dropout_rate,
-        ).to(self._device)
+        gcn_net = GCNNet(num_of_features, gcn_latent_dim, gcn_hidden_sizes, gcn_dropout_rate,).to(self._device)
+        lstm_net = nn.LSTM(gcn_latent_dim, lstm_hidden_size, lstm_num_layers, dropout=lstm_dropout_rate,).to(self._device)
         head_net = nn.Linear(2 * lstm_num_layers * lstm_hidden_size, 1)
 
         self._modules_dict = nn.ModuleDict(
@@ -103,8 +92,7 @@ class GCNRNNNet(nn.Module):
         lstm_cn_shape = lstm_cn.shape
 
         head_output = self._modules_dict["head_net"](
-            torch.cat(
-                (
+            torch.cat((
                     lstm_hn.reshape(
                         (lstm_hn_shape[1], lstm_hn_shape[0] * lstm_hn_shape[2])
                     ),
@@ -113,8 +101,7 @@ class GCNRNNNet(nn.Module):
                     ),
                 ),
                 dim=1,
-            )
-        )
+            ))
 
         return head_output.reshape(-1)
 
@@ -125,7 +112,12 @@ class Model:
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._gcn_data_list = None
         self._criterion = nn.MSELoss()
-        self._accuracy_metric = nn.L1Loss()
+        # self._accuracy_metric = nn.L1Loss()
+        self.train_idx = None
+        self.test_idx = None
+        self.validation_idx = None
+        self._gcn_rnn_net = None
+        self._optimizer = None
 
     def load_data(
         self,
@@ -230,12 +222,14 @@ class Model:
         return -(target * torch.log(predicted)).sum(dim=1).mean().to(self._device)
 
     def evaluate(self, evaluation_set: str = "test"):
-        self._gcn_rnn_net.eval()
+        # self._gcn_rnn_net.eval()
 
         if evaluation_set == "test":
+            self._gcn_rnn_net.eval()
             evaluation_set_idx = self.test_idx
             evaluation_set_labels = self.test_labels
         elif evaluation_set == "validation":
+            self._gcn_rnn_net.eval()
             evaluation_set_idx = self.validation_idx
             evaluation_set_labels = self.validation_labels
         elif evaluation_set == "train":
@@ -247,7 +241,7 @@ class Model:
 
         val_output = self._gcn_rnn_net(self._gcn_data_list, evaluation_set_idx)
         val_loss = self._criterion(val_output, evaluation_set_labels)
-        accuracy = self._accuracy_metric(val_output, evaluation_set_labels.float())
+        accuracy = r2_score(val_output.cpu().detach().numpy(), evaluation_set_labels.float().cpu().detach().numpy())
 
         return val_loss, accuracy
 
@@ -264,12 +258,12 @@ class Model:
             self._gcn_rnn_net.train()
             self._optimizer.zero_grad()
 
-            output = self._gcn_rnn_net(self._gcn_data_list, self.train_idx)
-
-            loss = self._criterion(output, self.train_labels)
-            train_accuracy = self._accuracy_metric(output, self.train_labels.float())
+            # output = self._gcn_rnn_net(self._gcn_data_list, self.train_idx)
+            # loss = self._criterion(output, self.train_labels)
+            # train_accuracy = r2_score(output.cpu().detach().numpy(), self.train_labels.float().cpu().detach().numpy())
+            loss, train_accuracy = self.evaluate("train")
             train_loss.append(loss.data.cpu().item())
-            train_acc.append(train_accuracy.data.cpu().item())
+            train_acc.append(train_accuracy)
             loss.backward()
             self._optimizer.step()
 
@@ -277,7 +271,7 @@ class Model:
             self._gcn_rnn_net.eval()
             val_loss, validation_accuracy = self.evaluate("validation")
             val_loss_list.append(val_loss.data.cpu().item())
-            val_accuracy_list.append(validation_accuracy.data.cpu().item())
+            val_accuracy_list.append(validation_accuracy)
 
             print(
                 f"epoch: {epoch + 1}, train loss: {train_loss[-1]:.5f}, validation loss:{val_loss_list[-1]:.5f}, "
@@ -286,289 +280,24 @@ class Model:
         return
 
 
-def train_test_split():
-    # indices that appear in all timestamps.
-    indices = [
-        1,
-        5,
-        12,
-        14,
-        15,
-        21,
-        24,
-        25,
-        31,
-        32,
-        34,
-        45,
-        47,
-        56,
-        80,
-        87,
-        90,
-        99,
-        104,
-        120,
-        129,
-        137,
-        151,
-        153,
-        155,
-        165,
-        177,
-        195,
-        203,
-        205,
-        210,
-        217,
-        220,
-        223,
-        228,
-        245,
-        246,
-        252,
-        263,
-        266,
-        272,
-        278,
-        279,
-        293,
-        306,
-        312,
-        329,
-        341,
-        345,
-        346,
-        350,
-        358,
-        362,
-        363,
-        385,
-        403,
-        410,
-        411,
-        412,
-        419,
-        429,
-        434,
-        449,
-        453,
-        457,
-        465,
-        467,
-        479,
-        498,
-        511,
-        521,
-        536,
-        539,
-        547,
-        549,
-        553,
-        556,
-        558,
-        572,
-        574,
-        585,
-        599,
-        601,
-        605,
-        620,
-        628,
-        630,
-        634,
-        641,
-        689,
-        690,
-        691,
-        702,
-        705,
-        713,
-        718,
-        723,
-        730,
-        737,
-        740,
-        764,
-        793,
-        794,
-        795,
-        803,
-        805,
-        817,
-        827,
-        829,
-        833,
-        838,
-        841,
-        852,
-        853,
-        863,
-        869,
-        882,
-        890,
-        895,
-        897,
-        898,
-        903,
-        904,
-        907,
-        939,
-        943,
-        956,
-        980,
-        987,
-        991,
-        993,
-        998,
-        999,
-        1019,
-        1037,
-        1052,
-        1058,
-        1070,
-        1073,
-        1080,
-        1095,
-        1116,
-        1120,
-        1135,
-        1144,
-        1151,
-        1157,
-        1158,
-        1159,
-        1164,
-        1179,
-        1181,
-        1192,
-        1194,
-        1195,
-        1198,
-        1214,
-        1222,
-        1241,
-        1246,
-        1258,
-        1269,
-        1274,
-        1277,
-        1278,
-        1287,
-        1291,
-        1300,
-        1302,
-        1306,
-        1309,
-        1323,
-        1328,
-        1369,
-        1374,
-        1377,
-        1380,
-        1384,
-        1385,
-        1393,
-        1430,
-        1434,
-        1440,
-        1441,
-        1444,
-        1451,
-        1453,
-        1465,
-        1467,
-        1480,
-        1500,
-        1501,
-        1505,
-        1510,
-        1522,
-        1550,
-        1576,
-        1578,
-        1580,
-        1586,
-        1587,
-        1594,
-        1601,
-        1618,
-        1619,
-        1628,
-        1629,
-        1641,
-        1663,
-        1669,
-        1670,
-        1690,
-        1694,
-        1701,
-        1706,
-        1720,
-        1728,
-        1731,
-        1743,
-        1751,
-        1758,
-        1767,
-        1768,
-        1770,
-        1780,
-        1792,
-        1797,
-        1799,
-        1800,
-        1809,
-        1813,
-        1814,
-        1830,
-        1839,
-        1844,
-        1854,
-        1874,
-        1876,
-        1878,
-        1881,
-        1882,
-        1889,
-        1894,
-        1899,
-        1906,
-        1911,
-        1912,
-        1930,
-        1932,
-        1952,
-        1955,
-        1956,
-        1957,
-        1963,
-        1974,
-        1976,
-        1981,
-        1983,
-        1987,
-        1992,
-        1995,
-        1998,
-        1999,
-        2006,
-        2010,
-        2027,
-    ]  # TODO take code from Jupyter notebook to calc this on the fly.
+def train_test_split(graphs):
+    prev_graph = graphs[0]
+    all_intersection = np.array(prev_graph.nodes())
+    for g in graphs[1:]:
+        all_intersection = np.intersect1d(all_intersection, g.nodes())
+        prev_graph = g
 
-    print(len(indices))
-    val_test_inds = np.random.choice(indices, round(len(indices) * 0.2), replace=False)
+    print("# of nodes that appear at all timestamps",len(all_intersection))
+    val_test_inds = np.random.choice(all_intersection, round(len(all_intersection) * 0.2), replace=False)
     test, validation = np.array_split(val_test_inds, 2)
-    train = np.setdiff1d(np.array(indices), val_test_inds)
+    train = np.setdiff1d(np.array(all_intersection), val_test_inds)
+    e=0
     return train, test, validation
 
 
 def get_labels_from_graphs(
     graphs: list,
-    features_meta: dict = DEFAULT_FEATURES_META,
-    dir_path: str = DEFAULT_OUT_DIR,
-) -> list:
+    features_meta: dict = DEFAULT_FEATURES_META, dir_path: str = DEFAULT_OUT_DIR, ) -> list:
     labels = []
     for g in graphs:
         features = GraphFeatures(g, features_meta, dir_path)
@@ -596,10 +325,7 @@ def load_input(parameters:dict):
 def run_trial(parameters):
     print(parameters)
     graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
-    train, test, validation = train_test_split()
-
-    out = []
-    total_out = []
+    train, test, validation = train_test_split(graphs)
 
     model = Model(parameters)
     model.load_data(
@@ -617,7 +343,7 @@ def run_trial(parameters):
 
     print(
         "\n"
-        f"test loss: {all_out.data.item():.5f}, test_accuracy: {out_test.data.item():.5f}"
+        f"test loss: {all_out.data.item():.5f}, test_accuracy: {out_test:.5f}"
     )
 
 
