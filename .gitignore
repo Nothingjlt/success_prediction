@@ -7,3 +7,6 @@
 
 # out folder
 /out
+
+# Python
+__pycache__
