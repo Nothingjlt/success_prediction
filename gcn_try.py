@@ -12,16 +12,16 @@ from lib.graph_measures.features_infra.graph_features import GraphFeatures
 from sklearn.linear_model import LinearRegression
 
 DEFAULT_FEATURES_META = {
-    "betweenness_centrality": FeatureMeta(
-        BetweennessCentralityCalculator, {"betweenness"}
-    ),
+    # "betweenness_centrality": FeatureMeta(
+    #     BetweennessCentralityCalculator, {"betweenness"}
+    # ),
     # "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
     # "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
     # "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
-    # "general": FeatureMeta(GeneralCalculator, {"gen"}),
+    "general": FeatureMeta(GeneralCalculator, {"gen"}),
 }
 
-DEFAULT_LABEL_TO_LEARN = "betweenness_centrality"
+DEFAULT_LABEL_TO_LEARN = "general"
 
 DEFAULT_OUT_DIR = "out"
 
@@ -210,9 +210,9 @@ class Model:
 
         # Special case where both in_deg and out_deg are learned, reduce to deg.
         if learned_label == "general":
-            self.train_labels = self.train_labels.sum(dim=1)
-            self.test_labels = self.test_labels.sum(dim=1)
-            self.validation_labels = self.validation_labels.sum(dim=1)
+            self.train_labels = self.train_labels.sum(dim=1).log()
+            self.test_labels = self.test_labels.sum(dim=1).log()
+            self.validation_labels = self.validation_labels.sum(dim=1).log()
 
         self.train_idx = [self._node_id_to_idx[node] for node in train]
         self.test_idx = [self._node_id_to_idx[node] for node in test]
@@ -234,7 +234,10 @@ class Model:
             lr=self._params["learning_rate"],
             weight_decay=self._params["weight_decay"],
         )
-        return self._gcn_data_list
+
+        self._l1_lambda = self._params["l1_lambda"]
+        
+        return
 
     @property
     def data(self):
@@ -242,6 +245,12 @@ class Model:
 
     def _ce_loss(self, predicted, target):
         return -(target * torch.log(predicted)).sum(dim=1).mean().to(self._device)
+
+    def _l1_norm(self):
+        l1_norm = 0
+        for p in self._gcn_rnn_net.parameters():
+            l1_norm += p.abs().sum()
+        return l1_norm
 
     def evaluate(self, evaluation_set: str = "test"):
         # self._gcn_rnn_net.eval()
@@ -263,6 +272,9 @@ class Model:
 
         val_output = self._gcn_rnn_net(self._gcn_data_list, evaluation_set_idx)
         val_loss = self._criterion(val_output, evaluation_set_labels)
+
+        val_loss += self._l1_lambda * self._l1_norm()
+
         accuracy = r2_score(
             val_output.cpu().detach().numpy(),
             evaluation_set_labels.float().cpu().detach().numpy(),
@@ -361,7 +373,7 @@ def get_labels_from_graph_measures(labels, model, learned_label):
     )
     # Special case where both in_deg and out_deg are learned, reduce to deg.
     if learned_label == "general":
-        labels_tensor = labels_tensor.sum(dim=1)
+        labels_tensor = labels_tensor.sum(dim=1).log()
     return labels_tensor
 
 
@@ -412,19 +424,27 @@ def run_trial(parameters):
     graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
     train, test, validation = train_test_split(graphs)
 
-    model = Model(parameters)
-    model.load_data(
-        graphs[:-1],
-        feature_mx,
-        labels[-1],
-        learned_label,
-        train,
-        test,
-        validation,
-    )
-    model.train()
+    model_out = []
+    model_test = []
 
-    all_out, out_test = model.evaluate()
+    for idx, g in enumerate(graphs[:-1]):
+
+        model = Model(parameters)
+        model.load_data(
+            [g],
+            feature_mx,
+            labels[idx + 1],
+            learned_label,
+            train,
+            test,
+            validation,
+        )
+        model.train()
+
+        all_out, out_test = model.evaluate()
+        
+        model_out.append(all_out)
+        model_test.append(out_test)
 
     zero_model_out, zero_model_test = evaluate_zero_model(
         model, labels, learned_label)
@@ -432,7 +452,7 @@ def run_trial(parameters):
         model, labels, learned_label)
 
     print(
-        f"test loss: {all_out.data.item():.5f}, test_accuracy: {out_test:.5f}")
+        f"test loss: {np.mean([m.data.item() for m in model_out]):.5f}, test_accuracy: {np.mean(model_test):.5f}")
     print(
         f"zero model loss: {np.mean([m.data.item() for m in zero_model_out]):.5f}, zero model accuracy: {np.mean(zero_model_test):.5f}")
     print(
@@ -443,7 +463,7 @@ if __name__ == "__main__":
     _params = {
         "data_name": "dnc",
         "net": GCNNet,
-        "epochs": 100,
+        "l1_lambda": 0,
         "epochs": 50,
         "gcn_dropout_rate": 0.3,
         "lstm_dropout_rate": 0.3,
