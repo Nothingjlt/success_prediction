@@ -1,0 +1,72 @@
+{
+    "l1_lambda": {
+        "_type": "choice",
+        "_value": [
+            0,
+            1e-7,
+            1e-9,
+            1e-11,
+            1e-13
+        ]
+    },
+    "epochs": {
+        "_type": "quniform",
+        "_value": [
+            500,
+            5000,
+            1200
+        ]
+    },
+    "gcn_dropout_rate": {
+        "_type": "quniform",
+        "_value": [
+            0,
+            0.99,
+            0.15
+        ]
+    },
+    "gcn_hidden_sizes": {
+        "_type": "choice",
+        "_value": [
+            "[10,10]",
+            "[30,30]",
+            "[100,100]"
+        ]
+    },
+    "learning_rate": {
+        "_type": "choice",
+        "_value": [
+            1e-2,
+            1e-3,
+            1e-4,
+            1e-5,
+            1e-6
+        ]
+    },
+    "weight_decay": {
+        "_type": "choice",
+        "_value": [
+            0.1,
+            5e-2,
+            1e-2,
+            5e-3,
+            1e-3
+        ]
+    },
+    "gcn_latent_dim": {
+        "_type": "choice",
+        "_value": [
+            10,
+            30,
+            50
+        ]
+    },
+    "lstm_hidden_size": {
+        "_type": "choice",
+        "_value": [
+            10,
+            30,
+            50
+        ]
+    }
+}
