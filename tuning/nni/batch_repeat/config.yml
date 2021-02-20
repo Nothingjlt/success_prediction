@@ -1,12 +1,12 @@
-experimentName: test gcn rnn params using random tuner
-searchSpaceFile: .\tuning\nni\random\search_space2.json
+experimentName: repeat gcn rnn configs for validation
+searchSpaceFile: .\tuning\nni\batch_repeat\search_space_extended.json
 trialCommand: python gcn_try.py --nni
 trialCodeDirectory: .
 trialConcurrency: 6
 trialGpuNumber: 1
-maxExperimentDuration: 150m
+maxExperimentDuration: 24h
 tuner:
-  name: Random
+  name: BatchTuner
 trainingService:
   platform: local
   useActiveGpu: True
