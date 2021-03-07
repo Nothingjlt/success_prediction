@@ -571,7 +571,7 @@ def run_trial(parameters):
     print(parameters)
     learned_label = parameters["learned_label"]
     graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
-    graphs_cutoff_number = 4 # GPU memory limited, using only 4 time steps
+    graphs_cutoff_number = parameters["graphs_cutoff_number"] # GPU memory limited, using only 4 time steps
     graphs = graphs[-graphs_cutoff_number:] 
     labels = labels[-graphs_cutoff_number:]
     train, test, validation = train_test_split(graphs, train_ratio=0.7)
@@ -652,6 +652,7 @@ def run_trial(parameters):
 def main():
     _params = {
         "data_name": "ia-retweet-pol",
+        "graphs_cutoff_number": 2,
         "net": GCNNet,
         "l1_lambda": 0,
         "epochs": 500,
