@@ -277,7 +277,9 @@ class Model:
         )
         # Special case where rank is required
         if self._learned_label == "general":
-            ret_labels = torch.log(ret_labels.sum(dim=1))
+            if ret_labels.dim == 2:
+                ret_labels = ret_labels.sum(dim=1)
+            ret_labels = torch.log(ret_labels)
         return ret_labels
 
     @property
@@ -552,7 +554,7 @@ def load_input(parameters: dict):
     graphs = pickle.load(
         open(
             "./pickles/" + str(parameters["data_name"]) +
-            "/dnc_candidate_two.pkl", "rb"
+            "/ia_retweet_pol.pkl", "rb"
         )
     )
     # labels = pickle.load(open("./pickles/" + str(parameters["data_name"]) + "/dnc_with_labels_candidate_one.pkl", "rb"))
@@ -569,10 +571,11 @@ def run_trial(parameters):
     print(parameters)
     learned_label = parameters["learned_label"]
     graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
+    graphs_cutoff_number = 4 # GPU memory limited, using only 4 time steps
+    graphs = graphs[-graphs_cutoff_number:] 
+    labels = labels[-graphs_cutoff_number:]
     train, test, validation = train_test_split(graphs, train_ratio=0.7)
 
-    # graphs = graphs[-2:]
-    # labels = labels[-2:]
 
     model_loss_list = []
     model_accuracy_list = []
@@ -648,7 +651,7 @@ def run_trial(parameters):
 
 def main():
     _params = {
-        "data_name": "dnc",
+        "data_name": "ia-retweet-pol",
         "net": GCNNet,
         "l1_lambda": 0,
         "epochs": 500,
