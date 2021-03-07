@@ -142,6 +142,7 @@ class Model:
         self._params = parameters
         self._device = DEVICE
         self._gcn_data_list = None
+        # self._criterion = nn.L1Loss()
         self._criterion = nn.MSELoss()
         # self._accuracy_metric = nn.L1Loss()
         self.train_idx = None
@@ -160,10 +161,13 @@ class Model:
         train=None,
         test=None,
         validation=None,
+        accuracy_metric=r2_score,
     ):
         self._gcn_data_list = []
 
         self._learned_label = learned_label
+
+        self._accruacy_metric = accuracy_metric
 
         all_nodes_set = set()
         for gnx in gnxs:
@@ -273,7 +277,7 @@ class Model:
         )
         # Special case where rank is required
         if self._learned_label == "general":
-            ret_labels = ret_labels.sum(dim=1)
+            ret_labels = torch.log(ret_labels.sum(dim=1))
         return ret_labels
 
     @property
@@ -338,16 +342,11 @@ class Model:
         val_loss += self._l1_lambda * self._l1_norm()
 
         if evaluate_accuracy:
-            accuracy = r2_score(
-                val_output.cpu().detach().numpy(),
-                evaluation_set_learned_labels.float().cpu().detach().numpy(),
-            )
+            accuracy = self._evaluate_accuracy(
+                val_output, evaluation_set_learned_labels)
 
-            tot_accuracy = r2_score(
-                (evaluation_set_current_labels +
-                 val_output).cpu().detach().numpy(),
-                evaluation_set_next_labels.float().cpu().detach().numpy()
-            )
+            tot_accuracy = self._evaluate_accuracy(
+                evaluation_set_current_labels + val_output, evaluation_set_next_labels)
         else:
             accuracy = None
             tot_accuracy = None
@@ -425,6 +424,16 @@ class Model:
             list(map(lambda x: self._get_labels_by_indices(x, self.test_idx), labels)))
         return stacked_labels
 
+    def _evaluate_accuracy(self, preditions, true_labels):
+        predictions_np = preditions.cpu().detach().numpy()
+        true_labels_np = true_labels.cpu().detach().numpy()
+        return self._accruacy_metric(predictions_np, true_labels_np)
+
+    def _evaluate_log_accuracy(self, predictions, true_labels):
+        predictions_log = torch.log(predictions)
+        true_labels_log = torch.log(true_labels)
+        return self._evaluate_accuracy(predictions_log, true_labels_log)
+
     def evaluate_zero_model_total_num(self, labels, indices):
         stacked_labels = self._get_stacked_labels_by_indices_set(
             labels, indices)
@@ -437,8 +446,8 @@ class Model:
             predictions.append(l)
 
             losses.append(self._criterion(predictions[-1], true_labels[-1]))
-            accuracies.append(r2_score(
-                predictions[-1].cpu().detach().numpy(), true_labels[-1].cpu().detach().numpy()))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[-1], true_labels[-1]))
         return losses, accuracies
 
     def evaluate_zero_model_diff(self, labels, indices):
@@ -453,8 +462,8 @@ class Model:
             predictions.append(torch.zeros(len(l), device=DEVICE))
 
             losses.append(self._criterion(predictions[-1], true_labels[-1]))
-            accuracies.append(r2_score(
-                predictions[-1].cpu().detach().numpy(), true_labels[-1].cpu().detach().numpy()))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[-1], true_labels[-1]))
         return losses, accuracies
 
     def evaluate_first_order_model_total_number(self, labels, indices):
@@ -472,12 +481,12 @@ class Model:
 
         for idx, l in enumerate(stacked_labels[:-1]):
             true_labels.append(stacked_labels[idx + 1])
-            predictions.append(torch.tensor([m.predict(
-                np.array([[idx+1]])) for m in lin_reg_models], device=DEVICE).view(-1))
+            predictions.append(torch.tensor(
+                [m.predict(np.array([[idx+1]])) for m in lin_reg_models], device=DEVICE).view(-1))
 
             losses.append(self._criterion(predictions[idx], true_labels[idx]))
-            accuracies.append(
-                r2_score(predictions[idx].cpu().detach().numpy(), true_labels[idx].cpu().detach().numpy()))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[idx], true_labels[idx]))
 
         return losses, accuracies
 
@@ -503,8 +512,8 @@ class Model:
                 np.array([[idx+1]])) for m in lin_reg_models], device=DEVICE).view(-1))
 
             losses.append(self._criterion(predictions[idx], true_labels[idx]))
-            accuracies.append(
-                r2_score(predictions[idx].cpu().detach().numpy(), true_labels[idx].cpu().detach().numpy()))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[idx], true_labels[idx]))
 
         return losses, accuracies
 
@@ -562,6 +571,9 @@ def run_trial(parameters):
     graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
     train, test, validation = train_test_split(graphs, train_ratio=0.7)
 
+    # graphs = graphs[-2:]
+    # labels = labels[-2:]
+
     model_loss_list = []
     model_accuracy_list = []
     model_tot_accuracy_list = []
@@ -586,17 +598,18 @@ def run_trial(parameters):
         validation,
     )
     model.train()
-    test_loss, test_accuracy, test_tot_accuracy = model.evaluate(
-        "testtrain", evaluate_accuracy=True)
+    with torch.no_grad():
+        test_loss, test_accuracy, test_tot_accuracy = model.evaluate(
+            "testtrain", evaluate_accuracy=True)
 
-    zero_model_tot_loss_list, zero_model_tot_accuracy_list = model.evaluate_zero_model_total_num(
-        labels, "testtrain")
-    first_order_tot_loss_list, first_order_tot_accuracy_list = model.evaluate_first_order_model_total_number(
-        labels, "testtrain")
-    zero_model_diff_loss_list, zero_model_diff_accuracy_list = model.evaluate_zero_model_diff(
-        labels, "testtrain")
-    first_order_diff_loss_list, first_order_diff_accuracy_list = model.evaluate_first_order_model_diff(
-        labels, "testtrain")
+        zero_model_tot_loss_list, zero_model_tot_accuracy_list = model.evaluate_zero_model_total_num(
+            labels, "testtrain")
+        first_order_tot_loss_list, first_order_tot_accuracy_list = model.evaluate_first_order_model_total_number(
+            labels, "testtrain")
+        zero_model_diff_loss_list, zero_model_diff_accuracy_list = model.evaluate_zero_model_diff(
+            labels, "testtrain")
+        first_order_diff_loss_list, first_order_diff_accuracy_list = model.evaluate_first_order_model_diff(
+            labels, "testtrain")
 
     if NNI:
         nni.report_intermediate_result(
@@ -633,19 +646,19 @@ def run_trial(parameters):
     )
 
 
-if __name__ == "__main__":
+def main():
     _params = {
         "data_name": "dnc",
         "net": GCNNet,
-        "l1_lambda": 7.80299277019119E-07,
+        "l1_lambda": 0,
         "epochs": 500,
-        "gcn_dropout_rate": 0.805860891339941,
+        "gcn_dropout_rate": 0.7,
         "lstm_dropout_rate": 0,
-        "gcn_hidden_sizes": [100, 100],
-        "learning_rate": 0.0000599683618989071,
-        "weight_decay": 0.00343940903913481,
-        "gcn_latent_dim": 10,
-        "lstm_hidden_size": 50,
+        "gcn_hidden_sizes": [10, 10, 10, 10, 10, 10, 10, 10, 10],
+        "learning_rate": 0.001,
+        "weight_decay": 0,
+        "gcn_latent_dim": 5,
+        "lstm_hidden_size": 10,
         "lstm_num_layers": 1,
         "learned_label": DEFAULT_LABEL_TO_LEARN,
     }
@@ -690,5 +703,9 @@ if __name__ == "__main__":
             model_tot_accuracy[0]-zero_model_tot_accuracy[-1])
     else:
         print(f"Final result: model tot accuracy: {model_tot_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
-        f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
-        f"first order diff accuracy: {first_order_diff_accuracy}")
+              f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
+              f"first order diff accuracy: {first_order_diff_accuracy}")
+
+
+if __name__ == "__main__":
+    main()
