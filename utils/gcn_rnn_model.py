@@ -1,8 +1,10 @@
+from networkx.algorithms.assortativity import correlation
 import torch
 from torch_geometric.data import Data
 from torch import nn, optim
 import numpy as np
 from sklearn.metrics import r2_score
+from scipy.stats import pearsonr
 from sklearn.linear_model import LinearRegression
 import nni
 from utils.gcn_rnn_net import GCNRNNNet
@@ -152,7 +154,7 @@ class Model:
         )
         # Special case where rank is required
         if self._learned_label == "general":
-            if ret_labels.dim == 2:
+            if ret_labels.dim() == 2:
                 ret_labels = ret_labels.sum(dim=1)
             ret_labels = torch.log(ret_labels)
         return ret_labels
@@ -170,7 +172,7 @@ class Model:
             l1_norm += p.abs().sum()
         return l1_norm
 
-    def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False):
+    def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False, evaluate_correlation: bool = False):
         # self._gcn_rnn_net.eval()
 
         if evaluation_set == "test":
@@ -200,7 +202,7 @@ class Model:
             evaluation_set_next_labels = self.train_next_time_labels
             # End trial with Yoram
         # Default to test+validation
-        elif evaluation_set == "testtrain":
+        elif evaluation_set == "testval":
             self._gcn_rnn_net.eval()
             evaluation_set_idx = self.validation_idx + self.test_idx
             evaluation_set_learned_labels = torch.cat(
@@ -227,8 +229,18 @@ class Model:
         else:
             accuracy = None
             tot_accuracy = None
+        
+        if evaluate_correlation:
+            correlation = self._evaluate_correlation(
+                val_output, evaluation_set_learned_labels)
 
-        return val_loss, accuracy, tot_accuracy
+            tot_correlation = self._evaluate_correlation(
+                evaluation_set_current_labels + val_output, evaluation_set_next_labels)
+        else:
+            correlation = None
+            tot_correlation = None
+
+        return val_loss, accuracy, tot_accuracy, correlation, tot_correlation
 
     def train(self):
         (
@@ -251,7 +263,7 @@ class Model:
             self._gcn_rnn_net.train()
             self._optimizer.zero_grad()
 
-            train_loss, _, _ = self.evaluate("train")
+            train_loss, _, _, _, _ = self.evaluate("train")
             # train_loss_list.append(train_loss)
             # train_accuracy_list.append(train_accuracy)
             # train_tot_accuracy_list.append(train_tot_accuracy)
@@ -270,14 +282,16 @@ class Model:
 
             if epoch % self._print_every_num_of_opochs == self._print_every_num_of_opochs - 1:
                 self._gcn_rnn_net.eval()
-                train_loss, train_accuracy, train_tot_accuracy = self.evaluate(
-                    "train", evaluate_accuracy=True)
-                validation_loss, validation_accuracy, validation_tot_accuracy = self.evaluate(
-                    "validation", evaluate_accuracy=True)
+                train_loss, train_accuracy, train_tot_accuracy, train_correlation, train_tot_correlation = self.evaluate(
+                    "train", evaluate_accuracy=True, evaluate_correlation=True)
+                validation_loss, validation_accuracy, validation_tot_accuracy, validation_correlation, validation_tot_correlation = self.evaluate(
+                    "validation", evaluate_accuracy=True, evaluate_correlation=True)
                 print(
                     f"epoch: {epoch + 1}, train loss: {train_loss.data.cpu().item():.5f}, validation loss:{validation_loss.data.cpu().item():.5f}, "
                     f"train accuracy: {train_accuracy:.5f}, validation accuracy: {validation_accuracy:.5f} "
                     f"train tot accuracy: {train_tot_accuracy:.5f}, validation tot accuracy: {validation_tot_accuracy:.5f} "
+                    f"train correlation: {train_correlation:.5f}, validation correlation: {validation_correlation:.5f} "
+                    f"train tot correlation: {train_tot_correlation:.5f}, validation tot correlation: {validation_tot_correlation:.5f} "
                 )
         return
 
@@ -288,7 +302,7 @@ class Model:
             all_indices = self.validation_idx
         elif indices_set == "train":
             all_indices = self.train_idx
-        elif indices_set == "testtrain":
+        elif indices_set == "testval":
             all_indices = set()
             all_indices = all_indices.union(
                 self.test_idx).union(self.validation_idx)
@@ -300,10 +314,19 @@ class Model:
             list(map(lambda x: self._get_labels_by_indices(x, self.test_idx), labels)))
         return stacked_labels
 
-    def _evaluate_accuracy(self, preditions, true_labels):
-        predictions_np = preditions.cpu().detach().numpy()
+    def _calc_criterion(self, predictions, true_labels, criterion):
+        predictions_np = predictions.cpu().detach().numpy()
         true_labels_np = true_labels.cpu().detach().numpy()
-        return self._accruacy_metric(predictions_np, true_labels_np)
+        if criterion == 'accuracy':
+            return self._accruacy_metric(predictions_np, true_labels_np)
+        if criterion == 'correlation':
+            return pearsonr(predictions_np, true_labels_np)[0]
+
+    def _evaluate_accuracy(self, predictions, true_labels):
+        return self._calc_criterion(predictions, true_labels, 'accuracy')
+
+    def _evaluate_correlation(self, predictions, true_labels):
+        return self._calc_criterion(predictions, true_labels, 'correlation')
 
     def _evaluate_log_accuracy(self, predictions, true_labels):
         predictions_log = torch.log(predictions)
@@ -317,6 +340,7 @@ class Model:
         predictions = []
         true_labels = []
         accuracies = []
+        correlations = []
         for idx, l in enumerate(stacked_labels[:-1]):
             true_labels.append(stacked_labels[idx + 1])
             predictions.append(l)
@@ -324,7 +348,9 @@ class Model:
             losses.append(self._criterion(predictions[-1], true_labels[-1]))
             accuracies.append(self._evaluate_accuracy(
                 predictions[-1], true_labels[-1]))
-        return losses, accuracies
+            correlations.append(self._evaluate_correlation(
+                predictions[-1], true_labels[-1]))
+        return losses, accuracies, correlations
 
     def evaluate_zero_model_diff(self, labels, indices):
         stacked_labels = self._get_stacked_labels_by_indices_set(
@@ -333,6 +359,7 @@ class Model:
         predictions = []
         true_labels = []
         accuracies = []
+        correlations = []
         for idx, l in enumerate(stacked_labels[:-1]):
             true_labels.append(stacked_labels[idx + 1]-l)
             predictions.append(torch.zeros(len(l), device=DEVICE))
@@ -340,7 +367,9 @@ class Model:
             losses.append(self._criterion(predictions[-1], true_labels[-1]))
             accuracies.append(self._evaluate_accuracy(
                 predictions[-1], true_labels[-1]))
-        return losses, accuracies
+            correlations.append(self._evaluate_correlation(
+                predictions[-1], true_labels[-1]))
+        return losses, accuracies, correlations
 
     def evaluate_first_order_model_total_number(self, labels, indices):
         stacked_labels = self._get_stacked_labels_by_indices_set(
@@ -349,6 +378,7 @@ class Model:
         predictions = []
         true_labels = []
         accuracies = []
+        correlations = []
         lin_reg_models = []
         time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
         for idx, n in enumerate(stacked_labels.T):
@@ -363,8 +393,10 @@ class Model:
             losses.append(self._criterion(predictions[idx], true_labels[idx]))
             accuracies.append(self._evaluate_accuracy(
                 predictions[idx], true_labels[idx]))
+            correlations.append(self._evaluate_correlation(
+                predictions[idx], true_labels[idx]))
 
-        return losses, accuracies
+        return losses, accuracies, correlations
 
     def evaluate_first_order_model_diff(self, labels, indices):
         stacked_labels = self._get_stacked_labels_by_indices_set(
@@ -373,6 +405,7 @@ class Model:
         predictions = []
         true_labels = []
         accuracies = []
+        correlations = []
         lin_reg_models = []
         time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
         for idx, n in enumerate(stacked_labels.T):
@@ -390,5 +423,7 @@ class Model:
             losses.append(self._criterion(predictions[idx], true_labels[idx]))
             accuracies.append(self._evaluate_accuracy(
                 predictions[idx], true_labels[idx]))
+            correlations.append(self._evaluate_correlation(
+                predictions[idx], true_labels[idx]))
 
-        return losses, accuracies
+        return losses, accuracies, correlations
