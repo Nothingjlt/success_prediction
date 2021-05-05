@@ -70,7 +70,7 @@ def get_measures_from_graphs(
 def load_input(parameters: dict):
     graphs = pickle.load(
         open(
-            "./pickles/" + str(parameters["data_folder_name"]) +
+            "./Pickles/" + str(parameters["data_folder_name"]) +
             "/" + parameters["data_name"] + ".pkl", "rb"
         )
     )
