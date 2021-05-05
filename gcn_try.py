@@ -1,46 +1,63 @@
 import networkx as nx
 import torch
-import os
 import pickle
 import numpy as np
 from torch_geometric.data import Data
 from torch import nn, optim
 from torch_geometric.nn import GCNConv
 import torch.nn.functional as F
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score
 from lib.graph_measures.features_meta.features_meta import *
 from lib.graph_measures.features_infra.graph_features import GraphFeatures
+from sklearn.linear_model import LinearRegression
+
+import argparse
+
+import ast
+import nni
 
 DEFAULT_FEATURES_META = {
     # "betweenness_centrality": FeatureMeta(
     #     BetweennessCentralityCalculator, {"betweenness"}
     # ),
-    "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
+    # "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
     # "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
     # "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
-    # "general": FeatureMeta(GeneralCalculator, {"gen"}),
+    "general": FeatureMeta(GeneralCalculator, {"gen"}),
 }
 
-DEFAULT_LABEL_TO_LEARN = "kcore"
+DEFAULT_LABEL_TO_LEARN = "general"
 
 DEFAULT_OUT_DIR = "out"
+
+PRINT_EVERY_NUM_OF_EPOCHS = 100
+
+
+NNI = False
+
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class GCNNet(nn.Module):
     def __init__(self, num_features, gcn_latent_dim, h_layers=[16], dropout=0.5):
         super(GCNNet, self).__init__()
-        self._conv1 = GCNConv(num_features, h_layers[0])
-        self._conv2 = GCNConv(h_layers[0], gcn_latent_dim)
+        self._convs = nn.ModuleList()
+        self._convs.append(GCNConv(num_features, h_layers[0]))
+        for idx, layer in enumerate(h_layers[1:]):
+            self._convs.append(GCNConv(h_layers[idx], layer))
+        self._convs.append(GCNConv(h_layers[-1], gcn_latent_dim))
         self._dropout = dropout
         self._activation_func = F.leaky_relu
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = DEVICE
 
     def forward(self, data):
         x, adj_mx = data.x.to(self._device), data.edge_index.to(self._device)
-        x = self._conv1(x, adj_mx)
-        x = self._activation_func(x)
-        x = F.dropout(x, p=self._dropout)
-        x = self._conv2(x, adj_mx)
+        for conv in self._convs[:-1]:
+            x = conv(x, adj_mx)
+            x = self._activation_func(x)
+            x = F.dropout(x, p=self._dropout)
+        x = self._convs[-1](x, adj_mx)
         return x
 
 
@@ -56,7 +73,7 @@ class GCNRNNNet(nn.Module):
         lstm_dropout_rate: float,
     ):
         super(GCNRNNNet, self).__init__()
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = DEVICE
 
         self._num_of_features = num_of_features
         self._gcn_latent_dim = gcn_latent_dim
@@ -90,7 +107,8 @@ class GCNRNNNet(nn.Module):
         )
         for d in data:
             gcn_output = torch.cat(
-                (gcn_output, self._modules_dict["gcn_net"](d)[None, :, :]), dim=0
+                (gcn_output, self._modules_dict["gcn_net"](
+                    d)[None, :, :]), dim=0
             )
         gcn_output = gcn_output[1:, :, :]
         gcn_output_only_training = gcn_output[:, idx_subset, :]
@@ -122,22 +140,34 @@ class GCNRNNNet(nn.Module):
 class Model:
     def __init__(self, parameters):
         self._params = parameters
-        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = DEVICE
         self._gcn_data_list = None
+        # self._criterion = nn.L1Loss()
         self._criterion = nn.MSELoss()
-        self._accuracy_metric = nn.L1Loss()
+        # self._accuracy_metric = nn.L1Loss()
+        self.train_idx = None
+        self.test_idx = None
+        self.validation_idx = None
+        self._gcn_rnn_net = None
+        self._optimizer = None
 
     def load_data(
         self,
         gnxs: list,
         feature_matrix,
-        labels,
-        learned_label: str,
-        train,
-        test,
-        validation,
+        current_timestamp_labels=None,
+        next_timestamp_labels=None,
+        learned_label: str = "",
+        train=None,
+        test=None,
+        validation=None,
+        accuracy_metric=r2_score,
     ):
         self._gcn_data_list = []
+
+        self._learned_label = learned_label
+
+        self._accruacy_metric = accuracy_metric
 
         all_nodes_set = set()
         for gnx in gnxs:
@@ -146,22 +176,23 @@ class Model:
 
         self._num_of_nodes = len(all_nodes_list)
 
-        node_id_to_idx = {x: i for i, x in enumerate(all_nodes_list)}
-        idx_to_node_id = {i: x for i, x in enumerate(all_nodes_list)}
+        self._node_id_to_idx = {x: i for i, x in enumerate(all_nodes_list)}
+        self._idx_to_node_id = {i: x for i, x in enumerate(all_nodes_list)}
 
         for gnx in gnxs:
             gnx.add_nodes_from(all_nodes_set)
             nodes = gnx.nodes()
             x = torch.tensor(
-                np.vstack([feature_matrix[node_id_to_idx[node]] for node in nodes]),
+                np.vstack([feature_matrix[self._node_id_to_idx[node]]
+                           for node in nodes]),
                 device=self._device,
             )
 
             edges = torch.tensor(
                 np.vstack(
                     [
-                        [node_id_to_idx[x[0]] for x in gnx.edges],
-                        [node_id_to_idx[x[1]] for x in gnx.edges],
+                        [self._node_id_to_idx[x[0]] for x in gnx.edges],
+                        [self._node_id_to_idx[x[1]] for x in gnx.edges],
                     ]
                 ),
                 dtype=torch.long,  # Required by torch_geometric.data.Data
@@ -172,38 +203,47 @@ class Model:
 
             self._gcn_data_list.append(d)
 
-        self.train_idx = [node_id_to_idx[node] for node in train]
-        self.test_idx = [node_id_to_idx[node] for node in test]
-        self.validation_idx = [node_id_to_idx[node] for node in validation]
+        self.train_idx = [self._node_id_to_idx[node] for node in train]
+        self.test_idx = [self._node_id_to_idx[node] for node in test]
+        self.validation_idx = [self._node_id_to_idx[node]
+                               for node in validation]
 
-        self.train_labels = torch.tensor(
-            [labels[learned_label].features[idx_to_node_id[i]] for i in self.train_idx],
-            dtype=torch.float,
-            device=self._device,
-        )
-        self.test_labels = torch.tensor(
-            [labels[learned_label].features[idx_to_node_id[i]] for i in self.test_idx],
-            dtype=torch.float,
-            device=self._device,
-        )
-        self.validation_labels = torch.tensor(
-            [
-                labels[learned_label].features[idx_to_node_id[i]]
-                for i in self.validation_idx
-            ],
-            dtype=torch.float,
-            device=self._device,
-        )
+        self.train_next_time_labels = self._get_labels_by_indices(
+            next_timestamp_labels, self.train_idx)
+        self.train_current_labels = self._get_labels_by_indices(
+            current_timestamp_labels, self.train_idx)
+
+        self.test_next_time_labels = self._get_labels_by_indices(
+            next_timestamp_labels, self.test_idx)
+        self.test_current_labels = self._get_labels_by_indices(
+            current_timestamp_labels, self.test_idx)
+
+        self.validation_next_time_labels = self._get_labels_by_indices(
+            next_timestamp_labels, self.validation_idx)
+        self.validation_current_labels = self._get_labels_by_indices(
+            current_timestamp_labels, self.validation_idx)
 
         # Special case where both in_deg and out_deg are learned, reduce to deg.
-        if learned_label == "general":
-            self.train_labels = self.train_labels.sum(dim=1)
-            self.test_labels = self.test_labels.sum(dim=1)
-            self.validation_labels = self.validation_labels.sum(dim=1)
+        if self._learned_label == "general":
 
-        self.train_idx = [node_id_to_idx[node] for node in train]
-        self.test_idx = [node_id_to_idx[node] for node in test]
-        self.validation_idx = [node_id_to_idx[node] for node in validation]
+            # Trials with Yoram
+            self.train_labels_to_learn = self.train_next_time_labels - self.train_current_labels
+            self.test_labels_to_learn = self.test_next_time_labels - self.test_current_labels
+            self.validation_labels_to_learn = self.validation_next_time_labels - \
+                self.validation_current_labels
+
+            # End trials with Yoram
+            # self.train_next_time_labels = self.train_next_time_labels.sum(
+            #     dim=1).log()
+            # self.test_next_time_labels = self.test_next_time_labels.sum(
+            #     dim=1).log()
+            # self.validation_next_time_labels = self.validation_next_time_labels.sum(
+            #     dim=1).log()
+
+        self.train_idx = [self._node_id_to_idx[node] for node in train]
+        self.test_idx = [self._node_id_to_idx[node] for node in test]
+        self.validation_idx = [self._node_id_to_idx[node]
+                               for node in validation]
 
         self._gcn_rnn_net = GCNRNNNet(
             feature_matrix.shape[1],
@@ -220,7 +260,27 @@ class Model:
             lr=self._params["learning_rate"],
             weight_decay=self._params["weight_decay"],
         )
-        return self._gcn_data_list
+
+        self._l1_lambda = self._params["l1_lambda"]
+
+        print(
+            f"number of params in model: {sum(p.numel() for p in self._gcn_rnn_net.parameters())}")
+
+        return
+
+    def _get_labels_by_indices(self, labels, indices):
+        ret_labels = torch.tensor(
+            [labels[self._learned_label].features[self._idx_to_node_id[i]]
+                for i in indices],
+            dtype=torch.float,
+            device=self._device,
+        )
+        # Special case where rank is required
+        if self._learned_label == "general":
+            if ret_labels.dim == 2:
+                ret_labels = ret_labels.sum(dim=1)
+            ret_labels = torch.log(ret_labels)
+        return ret_labels
 
     @property
     def data(self):
@@ -229,30 +289,82 @@ class Model:
     def _ce_loss(self, predicted, target):
         return -(target * torch.log(predicted)).sum(dim=1).mean().to(self._device)
 
-    def evaluate(self, evaluation_set: str = "test"):
-        self._gcn_rnn_net.eval()
+    def _l1_norm(self):
+        l1_norm = 0
+        for p in self._gcn_rnn_net.parameters():
+            l1_norm += p.abs().sum()
+        return l1_norm
+
+    def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False):
+        # self._gcn_rnn_net.eval()
 
         if evaluation_set == "test":
+            self._gcn_rnn_net.eval()
             evaluation_set_idx = self.test_idx
-            evaluation_set_labels = self.test_labels
+            # Trials with Yoram
+            # evaluation_set_labels = self.test_next_time_labels
+            evaluation_set_learned_labels = self.test_labels_to_learn
+            evaluation_set_current_labels = self.test_current_labels
+            evaluation_set_next_labels = self.test_next_time_labels
+            # End trial with Yoram
         elif evaluation_set == "validation":
+            self._gcn_rnn_net.eval()
             evaluation_set_idx = self.validation_idx
-            evaluation_set_labels = self.validation_labels
+            # Trials with Yoram
+            # evaluation_set_labels = self.validation_next_time_labels
+            evaluation_set_learned_labels = self.validation_labels_to_learn
+            evaluation_set_current_labels = self.validation_current_labels
+            evaluation_set_next_labels = self.validation_next_time_labels
+            # End trial with Yoram
         elif evaluation_set == "train":
             evaluation_set_idx = self.train_idx
-            evaluation_set_labels = self.train_labels
+            # Trials with Yoram
+            # evaluation_set_labels = self.train_next_time_labels
+            evaluation_set_learned_labels = self.train_labels_to_learn
+            evaluation_set_current_labels = self.train_current_labels
+            evaluation_set_next_labels = self.train_next_time_labels
+            # End trial with Yoram
+        # Default to test+validation
+        elif evaluation_set == "testtrain":
+            self._gcn_rnn_net.eval()
+            evaluation_set_idx = self.validation_idx + self.test_idx
+            evaluation_set_learned_labels = torch.cat(
+                (self.validation_labels_to_learn, self.test_labels_to_learn))
+            evaluation_set_current_labels = torch.cat(
+                (self.validation_current_labels, self.test_current_labels))
+            evaluation_set_next_labels = torch.cat(
+                (self.validation_next_time_labels, self.test_next_time_labels))
         else:
             print(f"Invalid evaluation set: {evaluation_set}")
             return
 
         val_output = self._gcn_rnn_net(self._gcn_data_list, evaluation_set_idx)
-        val_loss = self._criterion(val_output, evaluation_set_labels)
-        accuracy = self._accuracy_metric(val_output, evaluation_set_labels.float())
+        val_loss = self._criterion(val_output, evaluation_set_learned_labels)
 
-        return val_loss, accuracy
+        val_loss += self._l1_lambda * self._l1_norm()
+
+        if evaluate_accuracy:
+            accuracy = self._evaluate_accuracy(
+                val_output, evaluation_set_learned_labels)
+
+            tot_accuracy = self._evaluate_accuracy(
+                evaluation_set_current_labels + val_output, evaluation_set_next_labels)
+        else:
+            accuracy = None
+            tot_accuracy = None
+
+        return val_loss, accuracy, tot_accuracy
 
     def train(self):
-        train_loss, val_loss, train_acc, val_accuracy_list, val_loss_list = (
+        (
+            train_loss_list,
+            train_accuracy_list,
+            train_tot_accuracy_list,
+            val_accuracy_list,
+            val_loss_list,
+            val_tot_accuracy_list
+        ) = (
+            [],
             [],
             [],
             [],
@@ -264,307 +376,168 @@ class Model:
             self._gcn_rnn_net.train()
             self._optimizer.zero_grad()
 
-            output = self._gcn_rnn_net(self._gcn_data_list, self.train_idx)
-
-            loss = self._criterion(output, self.train_labels)
-            train_accuracy = self._accuracy_metric(output, self.train_labels.float())
-            train_loss.append(loss.data.cpu().item())
-            train_acc.append(train_accuracy.data.cpu().item())
-            loss.backward()
+            train_loss, _, _ = self.evaluate(
+                "train")
+            # train_loss_list.append(train_loss)
+            # train_accuracy_list.append(train_accuracy)
+            # train_tot_accuracy_list.append(train_tot_accuracy)
+            train_loss.backward()
             self._optimizer.step()
 
-            # Evaluate validation set
-            self._gcn_rnn_net.eval()
-            val_loss, validation_accuracy = self.evaluate("validation")
-            val_loss_list.append(val_loss.data.cpu().item())
-            val_accuracy_list.append(validation_accuracy.data.cpu().item())
+            # Comment out to improve performance. Will run only every 100 epochs:
 
-            print(
-                f"epoch: {epoch + 1}, train loss: {train_loss[-1]:.5f}, validation loss:{val_loss_list[-1]:.5f}, "
-                f"train accuracy: {train_acc[-1]:.5f}, validation accuracy: {val_accuracy_list[-1]:.5f} "
-            )
+            # Evaluate validation set
+            # self._gcn_rnn_net.eval()
+            # validation_loss, validation_accuracy, validation_tot_accuracy = self.evaluate(
+            #     "validation")
+            # val_loss_list.append(validation_loss)
+            # val_accuracy_list.append(validation_accuracy)
+            # val_tot_accuracy_list.append(validation_tot_accuracy)
+
+            if epoch % PRINT_EVERY_NUM_OF_EPOCHS == PRINT_EVERY_NUM_OF_EPOCHS - 1:
+                self._gcn_rnn_net.eval()
+                train_loss, train_accuracy, train_tot_accuracy = self.evaluate(
+                    "train", evaluate_accuracy=True)
+                validation_loss, validation_accuracy, validation_tot_accuracy = self.evaluate(
+                    "validation", evaluate_accuracy=True)
+                print(
+                    f"epoch: {epoch + 1}, train loss: {train_loss.data.cpu().item():.5f}, validation loss:{validation_loss.data.cpu().item():.5f}, "
+                    f"train accuracy: {train_accuracy:.5f}, validation accuracy: {validation_accuracy:.5f} "
+                    f"train tot accuracy: {train_tot_accuracy:.5f}, validation tot accuracy: {validation_tot_accuracy:.5f} "
+                )
         return
 
+    def _get_stacked_labels_by_indices_set(self, labels, indices_set):
+        if indices_set == "test":
+            all_indices = self.test_idx
+        elif indices_set == "validation":
+            all_indices = self.validation_idx
+        elif indices_set == "train":
+            all_indices = self.train_idx
+        elif indices_set == "testtrain":
+            all_indices = set()
+            all_indices = all_indices.union(
+                self.test_idx).union(self.validation_idx)
+        else:
+            all_indices = set()
+            all_indices = all_indices.union(self.train_idx).union(
+                self.test_idx).union(self.validation_idx)
+        stacked_labels = torch.stack(
+            list(map(lambda x: self._get_labels_by_indices(x, self.test_idx), labels)))
+        return stacked_labels
 
-def train_test_split():
-    # indices that appear in all timestamps.
-    indices = [
-        1,
-        5,
-        12,
-        14,
-        15,
-        21,
-        24,
-        25,
-        31,
-        32,
-        34,
-        45,
-        47,
-        56,
-        80,
-        87,
-        90,
-        99,
-        104,
-        120,
-        129,
-        137,
-        151,
-        153,
-        155,
-        165,
-        177,
-        195,
-        203,
-        205,
-        210,
-        217,
-        220,
-        223,
-        228,
-        245,
-        246,
-        252,
-        263,
-        266,
-        272,
-        278,
-        279,
-        293,
-        306,
-        312,
-        329,
-        341,
-        345,
-        346,
-        350,
-        358,
-        362,
-        363,
-        385,
-        403,
-        410,
-        411,
-        412,
-        419,
-        429,
-        434,
-        449,
-        453,
-        457,
-        465,
-        467,
-        479,
-        498,
-        511,
-        521,
-        536,
-        539,
-        547,
-        549,
-        553,
-        556,
-        558,
-        572,
-        574,
-        585,
-        599,
-        601,
-        605,
-        620,
-        628,
-        630,
-        634,
-        641,
-        689,
-        690,
-        691,
-        702,
-        705,
-        713,
-        718,
-        723,
-        730,
-        737,
-        740,
-        764,
-        793,
-        794,
-        795,
-        803,
-        805,
-        817,
-        827,
-        829,
-        833,
-        838,
-        841,
-        852,
-        853,
-        863,
-        869,
-        882,
-        890,
-        895,
-        897,
-        898,
-        903,
-        904,
-        907,
-        939,
-        943,
-        956,
-        980,
-        987,
-        991,
-        993,
-        998,
-        999,
-        1019,
-        1037,
-        1052,
-        1058,
-        1070,
-        1073,
-        1080,
-        1095,
-        1116,
-        1120,
-        1135,
-        1144,
-        1151,
-        1157,
-        1158,
-        1159,
-        1164,
-        1179,
-        1181,
-        1192,
-        1194,
-        1195,
-        1198,
-        1214,
-        1222,
-        1241,
-        1246,
-        1258,
-        1269,
-        1274,
-        1277,
-        1278,
-        1287,
-        1291,
-        1300,
-        1302,
-        1306,
-        1309,
-        1323,
-        1328,
-        1369,
-        1374,
-        1377,
-        1380,
-        1384,
-        1385,
-        1393,
-        1430,
-        1434,
-        1440,
-        1441,
-        1444,
-        1451,
-        1453,
-        1465,
-        1467,
-        1480,
-        1500,
-        1501,
-        1505,
-        1510,
-        1522,
-        1550,
-        1576,
-        1578,
-        1580,
-        1586,
-        1587,
-        1594,
-        1601,
-        1618,
-        1619,
-        1628,
-        1629,
-        1641,
-        1663,
-        1669,
-        1670,
-        1690,
-        1694,
-        1701,
-        1706,
-        1720,
-        1728,
-        1731,
-        1743,
-        1751,
-        1758,
-        1767,
-        1768,
-        1770,
-        1780,
-        1792,
-        1797,
-        1799,
-        1800,
-        1809,
-        1813,
-        1814,
-        1830,
-        1839,
-        1844,
-        1854,
-        1874,
-        1876,
-        1878,
-        1881,
-        1882,
-        1889,
-        1894,
-        1899,
-        1906,
-        1911,
-        1912,
-        1930,
-        1932,
-        1952,
-        1955,
-        1956,
-        1957,
-        1963,
-        1974,
-        1976,
-        1981,
-        1983,
-        1987,
-        1992,
-        1995,
-        1998,
-        1999,
-        2006,
-        2010,
-        2027,
-    ]  # TODO take code from Jupyter notebook to calc this on the fly.
+    def _evaluate_accuracy(self, preditions, true_labels):
+        predictions_np = preditions.cpu().detach().numpy()
+        true_labels_np = true_labels.cpu().detach().numpy()
+        return self._accruacy_metric(predictions_np, true_labels_np)
 
-    print(len(indices))
-    val_test_inds = np.random.choice(indices, round(len(indices) * 0.2), replace=False)
+    def _evaluate_log_accuracy(self, predictions, true_labels):
+        predictions_log = torch.log(predictions)
+        true_labels_log = torch.log(true_labels)
+        return self._evaluate_accuracy(predictions_log, true_labels_log)
+
+    def evaluate_zero_model_total_num(self, labels, indices):
+        stacked_labels = self._get_stacked_labels_by_indices_set(
+            labels, indices)
+        losses = []
+        predictions = []
+        true_labels = []
+        accuracies = []
+        for idx, l in enumerate(stacked_labels[:-1]):
+            true_labels.append(stacked_labels[idx + 1])
+            predictions.append(l)
+
+            losses.append(self._criterion(predictions[-1], true_labels[-1]))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[-1], true_labels[-1]))
+        return losses, accuracies
+
+    def evaluate_zero_model_diff(self, labels, indices):
+        stacked_labels = self._get_stacked_labels_by_indices_set(
+            labels, indices)
+        losses = []
+        predictions = []
+        true_labels = []
+        accuracies = []
+        for idx, l in enumerate(stacked_labels[:-1]):
+            true_labels.append(stacked_labels[idx + 1]-l)
+            predictions.append(torch.zeros(len(l), device=DEVICE))
+
+            losses.append(self._criterion(predictions[-1], true_labels[-1]))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[-1], true_labels[-1]))
+        return losses, accuracies
+
+    def evaluate_first_order_model_total_number(self, labels, indices):
+        stacked_labels = self._get_stacked_labels_by_indices_set(
+            labels, indices)
+        losses = []
+        predictions = []
+        true_labels = []
+        accuracies = []
+        lin_reg_models = []
+        time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
+        for idx, n in enumerate(stacked_labels.T):
+            lin_reg_models.append(
+                LinearRegression().fit(time_steps, n[:-1].cpu()))
+
+        for idx, l in enumerate(stacked_labels[:-1]):
+            true_labels.append(stacked_labels[idx + 1])
+            predictions.append(torch.tensor(
+                [m.predict(np.array([[idx+1]])) for m in lin_reg_models], device=DEVICE).view(-1))
+
+            losses.append(self._criterion(predictions[idx], true_labels[idx]))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[idx], true_labels[idx]))
+
+        return losses, accuracies
+
+    def evaluate_first_order_model_diff(self, labels, indices):
+        stacked_labels = self._get_stacked_labels_by_indices_set(
+            labels, indices)
+        losses = []
+        predictions = []
+        true_labels = []
+        accuracies = []
+        lin_reg_models = []
+        time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
+        for idx, n in enumerate(stacked_labels.T):
+            diffs = []
+            for idx, m in enumerate(n[:-1]):
+                diffs.append(n[idx+1]-m)
+            lin_reg_models.append(
+                LinearRegression().fit(time_steps, diffs))
+
+        for idx, l in enumerate(stacked_labels[:-1]):
+            true_labels.append(stacked_labels[idx + 1]-l)
+            predictions.append(torch.tensor([m.predict(
+                np.array([[idx+1]])) for m in lin_reg_models], device=DEVICE).view(-1))
+
+            losses.append(self._criterion(predictions[idx], true_labels[idx]))
+            accuracies.append(self._evaluate_accuracy(
+                predictions[idx], true_labels[idx]))
+
+        return losses, accuracies
+
+
+def train_test_split(graphs, train_ratio):
+    prev_graph = graphs[0]
+    all_intersection = np.array(prev_graph.nodes())
+    for g in graphs[1:]:
+        all_intersection = np.intersect1d(all_intersection, g.nodes())
+        prev_graph = g
+
+    print("# of nodes that appear at all timestamps", len(all_intersection))
+    val_test_inds = np.random.choice(
+        all_intersection, round(len(all_intersection) * (1-train_ratio)), replace=False
+    )
     test, validation = np.array_split(val_test_inds, 2)
-    train = np.setdiff1d(np.array(indices), val_test_inds)
+    train = np.setdiff1d(np.array(all_intersection), val_test_inds)
+    e = 0
     return train, test, validation
 
 
-def get_labels_from_graphs(
+def get_measures_from_graphs(
     graphs: list,
     features_meta: dict = DEFAULT_FEATURES_META,
     dir_path: str = DEFAULT_OUT_DIR,
@@ -577,14 +550,15 @@ def get_labels_from_graphs(
     return labels
 
 
-def load_input(parameters:dict):
+def load_input(parameters: dict):
     graphs = pickle.load(
         open(
-            "./pickles/" + str(parameters["data_name"]) + "/dnc_candidate_two.pkl", "rb"
+            "./pickles/" + str(parameters["data_name"]) +
+            "/ia_retweet_pol.pkl", "rb"
         )
     )
     # labels = pickle.load(open("./pickles/" + str(parameters["data_name"]) + "/dnc_with_labels_candidate_one.pkl", "rb"))
-    labels = get_labels_from_graphs(graphs)
+    labels = get_measures_from_graphs(graphs)
     all_nodes = set()
     for g in graphs:
         all_nodes.update(g.nodes())
@@ -595,45 +569,147 @@ def load_input(parameters:dict):
 
 def run_trial(parameters):
     print(parameters)
+    learned_label = parameters["learned_label"]
     graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
-    train, test, validation = train_test_split()
+    graphs_cutoff_number = parameters["graphs_cutoff_number"] # GPU memory limited, using only 4 time steps
+    graphs = graphs[-graphs_cutoff_number:] 
+    labels = labels[-graphs_cutoff_number:]
+    train, test, validation = train_test_split(graphs, train_ratio=0.7)
 
-    out = []
-    total_out = []
+
+    model_loss_list = []
+    model_accuracy_list = []
+    model_tot_accuracy_list = []
+    zero_model_tot_loss_list = []
+    zero_model_tot_accuracy_list = []
+    first_order_tot_loss_list = []
+    first_order_tot_accuracy_list = []
+    zero_model_diff_loss_list = []
+    zero_model_diff_accuracy_list = []
+    first_order_diff_loss_list = []
+    first_order_diff_accuracy_list = []
 
     model = Model(parameters)
     model.load_data(
-        graphs[:-1],
+        graphs,
         feature_mx,
+        labels[-2],
         labels[-1],
-        parameters["learned_label"],
+        learned_label,
         train,
         test,
         validation,
     )
     model.train()
+    with torch.no_grad():
+        test_loss, test_accuracy, test_tot_accuracy = model.evaluate(
+            "testtrain", evaluate_accuracy=True)
 
-    all_out, out_test = model.evaluate()
+        zero_model_tot_loss_list, zero_model_tot_accuracy_list = model.evaluate_zero_model_total_num(
+            labels, "testtrain")
+        first_order_tot_loss_list, first_order_tot_accuracy_list = model.evaluate_first_order_model_total_number(
+            labels, "testtrain")
+        zero_model_diff_loss_list, zero_model_diff_accuracy_list = model.evaluate_zero_model_diff(
+            labels, "testtrain")
+        first_order_diff_loss_list, first_order_diff_accuracy_list = model.evaluate_first_order_model_diff(
+            labels, "testtrain")
+
+    if NNI:
+        nni.report_intermediate_result(
+            test_tot_accuracy - zero_model_tot_accuracy_list[-1])
+
+    model_loss_list.append(test_loss)
+    model_accuracy_list.append(test_accuracy)
+    model_tot_accuracy_list.append(test_tot_accuracy)
 
     print(
-        "\n"
-        f"test loss: {all_out.data.item():.5f}, test_accuracy: {out_test.data.item():.5f}"
+        f"test loss: {np.mean([m.data.item() for m in model_loss_list]):.5f}, test_tot_accuracy: {np.mean(model_tot_accuracy_list):.5f}, test_diff_accuracy: {np.mean(model_accuracy_list):.5f}")
+    print(
+        f"zero model loss: {np.mean([m.data.item() for m in zero_model_tot_loss_list]):.5f}, zero model accuracy: {np.mean(zero_model_tot_accuracy_list):.5f}")
+    print(
+        f"first order model loss: {np.mean([m.data.item() for m in first_order_tot_loss_list]):.5f}, first order model accuracy: {np.mean(first_order_tot_accuracy_list):.5f}")
+    print(
+        f"zero diff model loss: {np.mean([m.data.item() for m in zero_model_diff_loss_list]):.5f}, zero diff model accuracy: {np.mean(zero_model_diff_accuracy_list):.5f}")
+    print(
+        f"first order diff model loss: {np.mean([m.data.item() for m in first_order_diff_loss_list]):.5f}, first order diff model accuracy: {np.mean(first_order_diff_accuracy_list):.5f}")
+    print("\n")
+
+    return (
+        [m.data.item() for m in model_loss_list],
+        model_accuracy_list,
+        model_tot_accuracy_list,
+        [m.data.item() for m in zero_model_tot_loss_list],
+        zero_model_tot_accuracy_list,
+        [m.data.item() for m in first_order_tot_loss_list],
+        first_order_tot_accuracy_list,
+        [m.data.item() for m in zero_model_diff_loss_list],
+        zero_model_diff_accuracy_list,
+        [m.data.item() for m in first_order_diff_loss_list],
+        first_order_diff_accuracy_list
     )
 
 
-if __name__ == "__main__":
-    params_ = {
-        "data_name": "dnc",
+def main():
+    _params = {
+        "data_name": "ia-retweet-pol",
+        "graphs_cutoff_number": 2,
         "net": GCNNet,
-        "epochs": 100,
-        "gcn_dropout_rate": 0.3,
-        "lstm_dropout_rate": 0.3,
-        "gcn_hidden_sizes": [10],
-        "learning_rate": 0.03,
-        "weight_decay": 0.005,
-        "gcn_latent_dim": 8,
-        "lstm_hidden_size": 12,
+        "l1_lambda": 0,
+        "epochs": 500,
+        "gcn_dropout_rate": 0.7,
+        "lstm_dropout_rate": 0,
+        "gcn_hidden_sizes": [10, 10, 10, 10, 10, 10, 10, 10, 10],
+        "learning_rate": 0.001,
+        "weight_decay": 0,
+        "gcn_latent_dim": 5,
+        "lstm_hidden_size": 10,
         "lstm_num_layers": 1,
         "learned_label": DEFAULT_LABEL_TO_LEARN,
     }
-    run_trial(params_)
+    l1_lambda = [0, 1e-7]
+    epochs = [500]
+    gcn_dropout_rate = [0.3, 0.5]
+    gcn_hidden_sizes = [[100, 100], [200, 200]]
+    learning_rate = [1e-3, 1e-2, 3e-2]
+    weight_decay = [5e-2, 1e-2]
+    gcn_latent_dim = [50, 100]
+    lstm_hidden_size = [50, 100]
+    results = []
+
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("--nni", action='store_true')
+
+    args = argparser.parse_args()
+
+    NNI = args.nni
+
+    if NNI:
+        p = nni.get_next_parameter()
+        p["gcn_hidden_sizes"] = ast.literal_eval(p["gcn_hidden_sizes"])
+        _params.update(p)
+
+    (
+        model_loss,
+        model_accuracy,
+        model_tot_accuracy,
+        zero_model_tot_loss,
+        zero_model_tot_accuracy,
+        first_order_tot_loss,
+        first_order_tot_accuracy,
+        zero_model_diff_loss,
+        zero_model_diff_accuracy,
+        first_order_diff_loss,
+        first_order_diff_accuracy
+    ) = run_trial(_params)
+
+    if NNI:
+        nni.report_final_result(
+            model_tot_accuracy[0]-zero_model_tot_accuracy[-1])
+    else:
+        print(f"Final result: model tot accuracy: {model_tot_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
+              f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
+              f"first order diff accuracy: {first_order_diff_accuracy}")
+
+
+if __name__ == "__main__":
+    main()

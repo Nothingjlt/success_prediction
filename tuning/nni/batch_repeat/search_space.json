@@ -1,0 +1,507 @@
+{
+    "combine_params": {
+        "_type": "choice",
+        "_value": [
+            {
+                "l1_lambda": 8.073646815051272e-8,
+                "epochs": 4500,
+                "gcn_dropout_rate": 0.799432066623333,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.0000055932061866985865,
+                "weight_decay": 0.008714215949986255,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 1.0595515877045695e-7,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.42997902879570016,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.009377598868045763,
+                "weight_decay": 0.0022599029307191053,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 0.00000245075308427768,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.9523381686958119,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.007002382096531422,
+                "weight_decay": 0.0458205082723214,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 2.0273385961131213e-10,
+                "epochs": 2000,
+                "gcn_dropout_rate": 0.5135022286594045,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.000024139115415405162,
+                "weight_decay": 0.0003631602773853425,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 1.5788862863545117e-19,
+                "epochs": 4500,
+                "gcn_dropout_rate": 0.5617996448556688,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000032621003103771477,
+                "weight_decay": 0.10232346128898354,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 1.2008498974535733e-9,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.8205794514100183,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000016556331449509964,
+                "weight_decay": 0.040144966622996554,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 0.000004453160187034474,
+                "epochs": 3500,
+                "gcn_dropout_rate": 0.6669525498691425,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000006337802225739799,
+                "weight_decay": 0.04551301137723313,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 3.034333486654839e-9,
+                "epochs": 4500,
+                "gcn_dropout_rate": 0.4777979890711209,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0014633413320841269,
+                "weight_decay": 0.006560564769762768,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 1.0133609939178672e-8,
+                "epochs": 4500,
+                "gcn_dropout_rate": 0.8145194360734955,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.0023818084911680186,
+                "weight_decay": 0.057893205626070296,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 9.81628284495152e-10,
+                "epochs": 3000,
+                "gcn_dropout_rate": 0.3373968329586178,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000004961987739691227,
+                "weight_decay": 0.045867497635575946,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 2.028727081648421e-11,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.16779800136257472,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.006836308478646677,
+                "weight_decay": 0.044836211021119454,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 4.4618985389043306e-7,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.09548056761069268,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000010996985840599228,
+                "weight_decay": 0.03411528686400474,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 3.700609905395499e-18,
+                "epochs": 4500,
+                "gcn_dropout_rate": 0.5324006469962186,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.000025701758900700155,
+                "weight_decay": 0.49186183107222686,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 3.4988724633392164e-10,
+                "epochs": 2000,
+                "gcn_dropout_rate": 0.839612175421982,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0037788266886839674,
+                "weight_decay": 0.021771578927838632,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 9.275793195810697e-10,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.4422276639942434,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.00008312316261504464,
+                "weight_decay": 0.06709276774726462,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 9.534681384286021e-11,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.03754209653488372,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.00023918102602880356,
+                "weight_decay": 0.00039726506051616814,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 3.113316353508713e-20,
+                "epochs": 4500,
+                "gcn_dropout_rate": 0.08878414891530062,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000022940653852018685,
+                "weight_decay": 0.012937548239761737,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 1.5921993978859464e-12,
+                "epochs": 3000,
+                "gcn_dropout_rate": 0.7023172091030369,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.00009406158827126531,
+                "weight_decay": 0.00030393064446786,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 5.893527442110967e-19,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.26364888692527055,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0000014530736817438875,
+                "weight_decay": 0.0016513481261340264,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 6.732725170061243e-12,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.28593209885394866,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0004634125612036906,
+                "weight_decay": 0.02318258719811533,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 1.350810537834772e-19,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.10210718867335744,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.00003142465608627489,
+                "weight_decay": 0.014317635463608114,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 0.000001408192610993859,
+                "epochs": 2000,
+                "gcn_dropout_rate": 0.34206556233713337,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.0012572972426505254,
+                "weight_decay": 0.020951501424512943,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 1.163491954125312e-8,
+                "epochs": 2500,
+                "gcn_dropout_rate": 0.660095729390611,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.00001663268933925906,
+                "weight_decay": 0.0004087954933455243,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 4.082926213075209e-11,
+                "epochs": 3500,
+                "gcn_dropout_rate": 0.47376213538110157,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.001849734881368185,
+                "weight_decay": 0.0074614654983610595,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 3.739586171602801e-18,
+                "epochs": 2500,
+                "gcn_dropout_rate": 0.9059988662838699,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000020590549363948627,
+                "weight_decay": 0.00044604993558584617,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 8.8741687087395e-11,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.8435566210287948,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000027043898069998896,
+                "weight_decay": 0.008208614749749972,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 2.0478168271752203e-13,
+                "epochs": 2500,
+                "gcn_dropout_rate": 0.7534813036661545,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.00001403892841785381,
+                "weight_decay": 0.0003336413134854615,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 5.0240266496821546e-20,
+                "epochs": 4000,
+                "gcn_dropout_rate": 0.3547939883238389,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.00004337245384144583,
+                "weight_decay": 0.5459536358881653,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 3.237227324410823e-17,
+                "epochs": 3000,
+                "gcn_dropout_rate": 0.4987805291956495,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.00008773562964477782,
+                "weight_decay": 0.004661611276575062,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 5.034598802430337e-12,
+                "epochs": 1000,
+                "gcn_dropout_rate": 0.24457706563815285,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.00007178982497182341,
+                "weight_decay": 0.07416224319326314,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 2.5741001418168646e-10,
+                "epochs": 3000,
+                "gcn_dropout_rate": 0.2697740415259253,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0003195021528550401,
+                "weight_decay": 0.7528141751644857,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 4.589139135415088e-7,
+                "epochs": 3000,
+                "gcn_dropout_rate": 0.5171177274890447,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.0002514819818680934,
+                "weight_decay": 0.03106903120802292,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 3.6327500957018524e-19,
+                "epochs": 2000,
+                "gcn_dropout_rate": 0.34026818254521807,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0063229547682325206,
+                "weight_decay": 0.015283526431613587,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 4.399068228676137e-13,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.591685380963058,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0016248306574798575,
+                "weight_decay": 0.029361110901998583,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 5.909848062958338e-12,
+                "epochs": 3500,
+                "gcn_dropout_rate": 0.6938054206688076,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0005618290285576284,
+                "weight_decay": 0.0010774970237767264,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 2.845194881260321e-18,
+                "epochs": 2000,
+                "gcn_dropout_rate": 0.7948489295962258,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.00022369104494266334,
+                "weight_decay": 0.0016660874949770957,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 7.802992770191197e-7,
+                "epochs": 500,
+                "gcn_dropout_rate": 0.8058608913399417,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.000059968361898907156,
+                "weight_decay": 0.0034394090391348118,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 6.91081995607434e-14,
+                "epochs": 4000,
+                "gcn_dropout_rate": 0.5087098122345659,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.000005478680151142076,
+                "weight_decay": 0.14647358328347973,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 0.00000753342149232675,
+                "epochs": 3000,
+                "gcn_dropout_rate": 0.6939529956804478,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.000018183522571394843,
+                "weight_decay": 0.0006544095019608973,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 3.430573883968215e-7,
+                "epochs": 2500,
+                "gcn_dropout_rate": 0.3547893358500013,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.00004121085952135551,
+                "weight_decay": 0.5604102545413435,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 1.3747823207471899e-16,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.8049544654166535,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.000016829373854539067,
+                "weight_decay": 0.0002503515970931093,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 2.8252201852870593e-12,
+                "epochs": 4000,
+                "gcn_dropout_rate": 0.6787799656144087,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.001446168271354822,
+                "weight_decay": 0.0001097553131261962,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 3.4125780898918625e-9,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.525603897731406,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.006833720909831287,
+                "weight_decay": 0.425687862599215,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 0.000002902798784640627,
+                "epochs": 3500,
+                "gcn_dropout_rate": 0.11305935503939613,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.00007470383749554928,
+                "weight_decay": 0.013471434913969153,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 10
+            },
+            {
+                "l1_lambda": 7.834597153557481e-17,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.24525692477897465,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.000010073735630142593,
+                "weight_decay": 0.5452439226059671,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 4.182415654161485e-19,
+                "epochs": 1500,
+                "gcn_dropout_rate": 0.33558541516684537,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.0004339226944480787,
+                "weight_decay": 0.0010118531482804166,
+                "gcn_latent_dim": 50,
+                "lstm_hidden_size": 30
+            },
+            {
+                "l1_lambda": 4.168573550208337e-7,
+                "epochs": 3500,
+                "gcn_dropout_rate": 0.5499515176894014,
+                "gcn_hidden_sizes": "[10,10]",
+                "learning_rate": 0.0000035619749999574094,
+                "weight_decay": 0.03901458954764069,
+                "gcn_latent_dim": 30,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 1.5220743744975485e-12,
+                "epochs": 3000,
+                "gcn_dropout_rate": 0.6554476628171358,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.0005089850285116261,
+                "weight_decay": 0.1148940422745992,
+                "gcn_latent_dim": 100,
+                "lstm_hidden_size": 50
+            },
+            {
+                "l1_lambda": 6.445010996420612e-8,
+                "epochs": 5000,
+                "gcn_dropout_rate": 0.9804071762839657,
+                "gcn_hidden_sizes": "[100,100]",
+                "learning_rate": 0.0000017416142146137176,
+                "weight_decay": 0.001268611438059809,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 100
+            },
+            {
+                "l1_lambda": 3.1123298143181118e-16,
+                "epochs": 2000,
+                "gcn_dropout_rate": 0.39255138733200334,
+                "gcn_hidden_sizes": "[30,30]",
+                "learning_rate": 0.000014638696350556893,
+                "weight_decay": 0.000431009206731301,
+                "gcn_latent_dim": 10,
+                "lstm_hidden_size": 30
+            }
+        ]
+    }
+}

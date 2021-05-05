@@ -1,0 +1,13 @@
+experimentName: repeat gcn rnn configs for validation
+searchSpaceFile: .\tuning\nni\batch_repeat\search_space_extended.json
+trialCommand: python gcn_try.py --nni
+trialCodeDirectory: .
+trialConcurrency: 6
+trialGpuNumber: 1
+maxExperimentDuration: 24h
+tuner:
+  name: BatchTuner
+trainingService:
+  platform: local
+  useActiveGpu: True
+  maxTrialNumberPerGpu: 3

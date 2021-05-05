@@ -1,0 +1,13 @@
+experimentName: test gcn rnn params using random tuner
+searchSpaceFile: .\tuning\nni\random\search_space2.json
+trialCommand: python gcn_try.py --nni
+trialCodeDirectory: .
+trialConcurrency: 6
+trialGpuNumber: 1
+maxExperimentDuration: 150m
+tuner:
+  name: Random
+trainingService:
+  platform: local
+  useActiveGpu: True
+  maxTrialNumberPerGpu: 3

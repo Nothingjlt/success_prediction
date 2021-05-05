@@ -1,0 +1,62 @@
+{
+    "l1_lambda": {
+        "_type": "choice",
+        "_value": [
+            0,
+            1e-7
+        ]
+    },
+    "epochs": {
+        "_type": "choice",
+        "_value": [
+            500,
+            1500,
+            3000
+        ]
+    },
+    "gcn_dropout_rate": {
+        "_type": "choice",
+        "_value": [
+            0.3,
+            0.5,
+            0.8
+        ]
+    },
+    "gcn_hidden_sizes": {
+        "_type": "choice",
+        "_value": [
+            "[10, 10, 10, 10, 10, 10, 10, 10, 10]",
+            "[5, 5, 5, 5, 5, 5, 5, 5, 5]"
+        ]
+    },
+    "learning_rate": {
+        "_type": "choice",
+        "_value": [
+            1e-4,
+            1e-3,
+            1e-2
+        ]
+    },
+    "weight_decay": {
+        "_type": "choice",
+        "_value": [
+            5e-2,
+            1e-2,
+            0
+        ]
+    },
+    "gcn_latent_dim": {
+        "_type": "choice",
+        "_value": [
+            5,
+            10
+        ]
+    },
+    "lstm_hidden_size": {
+        "_type": "choice",
+        "_value": [
+            5,
+            10
+        ]
+    }
+}
