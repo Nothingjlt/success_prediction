@@ -208,8 +208,12 @@ def main():
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--nni", action='store_true')
+    argparser.add_argument("--data-folder-name", type=str, help="Folder name for dataset to evaluate")
+    argparser.add_argument("--data-name", type=str, help="Data pickle file name, without the .pkl extention")
 
     args = argparser.parse_args()
+
+    _params.update({k: v for k, v in vars(args).items() if v is not None and (k == "data_folder_name" or k == "data_name")})
 
     NNI = args.nni
 
