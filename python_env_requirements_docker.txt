@@ -1,9 +1,4 @@
-torch-cluster
-torch-geometric
-torch-scatter
-torch-sparse
-torch-spline-conv
-torchaudio
+
 
 bitstring
 nni
