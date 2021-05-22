@@ -100,14 +100,20 @@ def run_trial(parameters):
     model_tot_accuracy_list = []
     model_correlation_list = []
     model_tot_correlation_list = []
+    model_mea_list = []
+    model_tot_mae_list = []
     zero_model_tot_loss_list = []
     zero_model_tot_accuracy_list = []
+    zero_model_tot_mae_list = []
     first_order_tot_loss_list = []
     first_order_tot_accuracy_list = []
+    first_order_tot_mae_list = []
     zero_model_diff_loss_list = []
     zero_model_diff_accuracy_list = []
+    zero_model_diff_mae_list = []
     first_order_diff_loss_list = []
     first_order_diff_accuracy_list = []
+    first_order_diff_mae_list = []
 
     model = Model(NNI, parameters)
     model.load_data(
@@ -122,17 +128,40 @@ def run_trial(parameters):
     )
     model.train()
     with torch.no_grad():
-        test_loss, test_accuracy, test_tot_accuracy, test_correlation, test_tot_correlation = model.evaluate(
-            "test", evaluate_accuracy=True, evaluate_correlation=True)
+        (
+            test_loss,
+            test_accuracy,
+            test_tot_accuracy,
+            test_correlation,
+            test_tot_correlation,
+            test_mea,
+            test_tot_mae
+        ) = model.evaluate("test", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
 
-        zero_model_tot_loss_list, zero_model_tot_accuracy_list, zero_model_tot_correlation_list = model.evaluate_zero_model_total_num(
-            labels, "test")
-        first_order_tot_loss_list, first_order_tot_accuracy_list, first_order_tot_correlation_list = model.evaluate_first_order_model_total_number(
-            labels, "test")
-        zero_model_diff_loss_list, zero_model_diff_accuracy_list, zero_model_diff_correlation_list = model.evaluate_zero_model_diff(
-            labels, "test")
-        first_order_diff_loss_list, first_order_diff_accuracy_list, first_order_diff_correlation_list = model.evaluate_first_order_model_diff(
-            labels, "test")
+        (
+            zero_model_tot_loss_list,
+            zero_model_tot_accuracy_list,
+            zero_model_tot_correlation_list,
+            zero_model_tot_mae_list
+        ) = model.evaluate_zero_model_total_num(labels, "test")
+        (
+            first_order_tot_loss_list,
+            first_order_tot_accuracy_list,
+            first_order_tot_correlation_list,
+            first_order_tot_mae_list
+        ) = model.evaluate_first_order_model_total_number(labels, "test")
+        (
+            zero_model_diff_loss_list,
+            zero_model_diff_accuracy_list,
+            zero_model_diff_correlation_list,
+            zero_model_diff_mae_list
+        ) = model.evaluate_zero_model_diff(labels, "test")
+        (
+            first_order_diff_loss_list,
+            first_order_diff_accuracy_list,
+            first_order_diff_correlation_list,
+            first_order_diff_mae_list
+        ) = model.evaluate_first_order_model_diff(labels, "test")
 
     if NNI:
         nni.report_intermediate_result(
@@ -143,17 +172,19 @@ def run_trial(parameters):
     model_tot_accuracy_list.append(test_tot_accuracy)
     model_correlation_list.append(test_correlation)
     model_tot_correlation_list.append(test_tot_correlation)
+    model_mea_list.append(test_mea)
+    model_tot_mae_list.append(test_tot_mae)
 
     print(
-        f"test loss: {np.mean([m.data.item() for m in model_loss_list]):.5f}, test_tot_accuracy: {np.mean(model_tot_accuracy_list):.5f}, test_diff_accuracy: {np.mean(model_accuracy_list):.5f}, test_tot_correlation: {np.mean(model_tot_correlation_list):.5f}, test_diff_correlation: {np.mean(model_correlation_list):.5f}")
+        f"test loss: {np.mean([m.data.item() for m in model_loss_list]):.5f}, test_tot_accuracy: {np.mean(model_tot_accuracy_list):.5f}, test_diff_accuracy: {np.mean(model_accuracy_list):.5f}, test_tot_correlation: {np.mean(model_tot_correlation_list):.5f}, test_diff_correlation: {np.mean(model_correlation_list):.5f}, test_tot_mae: {np.mean(model_tot_mae_list):.5f}, test_diff_mae: {np.mean(model_mea_list):.5f}")
     print(
-        f"zero model loss: {np.mean([m.data.item() for m in zero_model_tot_loss_list]):.5f}, zero model accuracy: {np.mean(zero_model_tot_accuracy_list):.5f}, zero model correlation: {np.mean(zero_model_tot_correlation_list):.5f}")
+        f"zero model loss: {np.mean([m.data.item() for m in zero_model_tot_loss_list]):.5f}, zero model accuracy: {np.mean(zero_model_tot_accuracy_list):.5f}, zero model correlation: {np.mean(zero_model_tot_correlation_list):.5f}, zero model mae: {np.mean(zero_model_tot_mae_list):.5f}")
     print(
-        f"first order model loss: {np.mean([m.data.item() for m in first_order_tot_loss_list]):.5f}, first order model accuracy: {np.mean(first_order_tot_accuracy_list):.5f}, first order model correlation: {np.mean(first_order_tot_correlation_list):.5f}")
+        f"first order model loss: {np.mean([m.data.item() for m in first_order_tot_loss_list]):.5f}, first order model accuracy: {np.mean(first_order_tot_accuracy_list):.5f}, first order model correlation: {np.mean(first_order_tot_correlation_list):.5f}, first order model mae: {np.mean(first_order_tot_mae_list):.5f}")
     print(
-        f"zero diff model loss: {np.mean([m.data.item() for m in zero_model_diff_loss_list]):.5f}, zero diff model accuracy: {np.mean(zero_model_diff_accuracy_list):.5f}, zero diff model correlation: {np.mean(zero_model_diff_correlation_list):.5f}")
+        f"zero diff model loss: {np.mean([m.data.item() for m in zero_model_diff_loss_list]):.5f}, zero diff model accuracy: {np.mean(zero_model_diff_accuracy_list):.5f}, zero diff model correlation: {np.mean(zero_model_diff_correlation_list):.5f}, zero diff model mae: {np.mean(zero_model_diff_mae_list):.5f}")
     print(
-        f"first order diff model loss: {np.mean([m.data.item() for m in first_order_diff_loss_list]):.5f}, first order diff model accuracy: {np.mean(first_order_diff_accuracy_list):.5f}, first order diff model correlation: {np.mean(first_order_diff_correlation_list):.5f}")
+        f"first order diff model loss: {np.mean([m.data.item() for m in first_order_diff_loss_list]):.5f}, first order diff model accuracy: {np.mean(first_order_diff_accuracy_list):.5f}, first order diff model correlation: {np.mean(first_order_diff_correlation_list):.5f}, first order diff model mae: {np.mean(first_order_diff_mae_list):.5f}")
     print("\n")
 
     return (
@@ -162,18 +193,24 @@ def run_trial(parameters):
         model_tot_accuracy_list,
         model_correlation_list,
         model_tot_correlation_list,
+        model_mea_list,
+        model_tot_mae_list,
         [m.data.item() for m in zero_model_tot_loss_list],
         zero_model_tot_accuracy_list,
         zero_model_tot_correlation_list,
+        zero_model_tot_mae_list,
         [m.data.item() for m in first_order_tot_loss_list],
         first_order_tot_accuracy_list,
         first_order_tot_correlation_list,
+        first_order_tot_mae_list,
         [m.data.item() for m in zero_model_diff_loss_list],
         zero_model_diff_accuracy_list,
         zero_model_diff_correlation_list,
+        zero_model_diff_mae_list,
         [m.data.item() for m in first_order_diff_loss_list],
         first_order_diff_accuracy_list,
-        first_order_diff_correlation_list
+        first_order_diff_correlation_list,
+        first_order_diff_mae_list
     )
 
 
@@ -208,12 +245,15 @@ def main():
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument("--nni", action='store_true')
-    argparser.add_argument("--data-folder-name", type=str, help="Folder name for dataset to evaluate")
-    argparser.add_argument("--data-name", type=str, help="Data pickle file name, without the .pkl extention")
+    argparser.add_argument("--data-folder-name", type=str,
+                           help="Folder name for dataset to evaluate")
+    argparser.add_argument("--data-name", type=str,
+                           help="Data pickle file name, without the .pkl extention")
 
     args = argparser.parse_args()
 
-    _params.update({k: v for k, v in vars(args).items() if v is not None and (k == "data_folder_name" or k == "data_name")})
+    _params.update({k: v for k, v in vars(args).items() if v is not None and (
+        k == "data_folder_name" or k == "data_name")})
 
     NNI = args.nni
 
@@ -228,18 +268,24 @@ def main():
         model_tot_accuracy,
         model_correlation,
         model_tot_correlation,
+        model_mea,
+        model_tot_mae,
         zero_model_tot_loss,
         zero_model_tot_accuracy,
         zero_model_tot_correlation,
+        zero_model_tot_mae,
         first_order_tot_loss,
         first_order_tot_accuracy,
         first_order_tot_correlation,
+        first_order_tot_mae,
         zero_model_diff_loss,
         zero_model_diff_accuracy,
         zero_model_diff_correlation,
+        zero_model_diff_mae,
         first_order_diff_loss,
         first_order_diff_accuracy,
-        first_order_diff_correlation
+        first_order_diff_correlation,
+        first_order_diff_mae
     ) = run_trial(_params)
 
     if NNI:
@@ -252,17 +298,25 @@ def main():
         print(f"Final result (correlation): model tot correlation: {model_tot_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
               f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
               f"first order diff correlation: {first_order_diff_correlation}")
+        print(f"Final result (mae): model tot mae: {model_tot_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
+              f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
+              f"first order diff mae: {first_order_diff_mae}")
     return (
         model_tot_accuracy,
         model_tot_correlation,
+        model_tot_mae,
         zero_model_tot_accuracy,
         zero_model_tot_correlation,
+        zero_model_tot_mae,
         first_order_tot_accuracy,
         first_order_tot_correlation,
+        first_order_tot_mae,
         zero_model_diff_accuracy,
         zero_model_diff_correlation,
+        zero_model_diff_mae,
         first_order_diff_accuracy,
-        first_order_diff_correlation
+        first_order_diff_correlation,
+        first_order_diff_mae
     )
 
 
@@ -274,14 +328,19 @@ if __name__ == "__main__":
     for (
             model_tot_accuracy,
             model_tot_correlation,
+            model_tot_mae,
             zero_model_tot_accuracy,
             zero_model_tot_correlation,
+            zero_model_tot_mae,
             first_order_tot_accuracy,
             first_order_tot_correlation,
+            first_order_tot_mae,
             zero_model_diff_accuracy,
             zero_model_diff_correlation,
+            zero_model_diff_mae,
             first_order_diff_accuracy,
-            first_order_diff_correlation
+            first_order_diff_correlation,
+            first_order_diff_mae
     ) in results:
         print(f"Final result: model tot accuracy: {model_tot_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
               f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
@@ -289,3 +348,6 @@ if __name__ == "__main__":
         print(f"Final result: model tot correlation: {model_tot_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
               f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
               f"first order diff correlation: {first_order_diff_correlation}")
+        print(f"Final result: model tot mae: {model_tot_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
+              f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
+              f"first order diff mae: {first_order_diff_mae}")

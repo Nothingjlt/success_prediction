@@ -3,7 +3,7 @@ import torch
 from torch_geometric.data import Data
 from torch import nn, optim
 import numpy as np
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, mean_absolute_error
 from scipy.stats import pearsonr
 from sklearn.linear_model import LinearRegression
 import nni
@@ -25,7 +25,7 @@ class Model:
         self.validation_idx = None
         self._gcn_rnn_net = None
         self._optimizer = None
-        self._print_every_num_of_opochs = parameters['print_every_num_of_epochs']
+        self._print_every_num_of_epochs = parameters['print_every_num_of_epochs']
         self._nni = nni
 
     def load_data(
@@ -172,7 +172,7 @@ class Model:
             l1_norm += p.abs().sum()
         return l1_norm
 
-    def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False, evaluate_correlation: bool = False):
+    def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False, evaluate_correlation: bool = False, evaluate_mae: bool = False):
         # self._gcn_rnn_net.eval()
 
         if evaluation_set == "test":
@@ -229,7 +229,7 @@ class Model:
         else:
             accuracy = None
             tot_accuracy = None
-        
+
         if evaluate_correlation:
             correlation = self._evaluate_correlation(
                 val_output, evaluation_set_learned_labels)
@@ -240,7 +240,16 @@ class Model:
             correlation = None
             tot_correlation = None
 
-        return val_loss, accuracy, tot_accuracy, correlation, tot_correlation
+        if evaluate_mae:
+            mae = self._evaluate_mae(val_output, evaluation_set_learned_labels)
+
+            tot_mae = self._evaluate_mae(
+                evaluation_set_current_labels + val_output, evaluation_set_current_labels)
+        else:
+            mae = None
+            tot_mae = None
+
+        return val_loss, accuracy, tot_accuracy, correlation, tot_correlation, mae, tot_mae
 
     def train(self):
         (
@@ -263,7 +272,7 @@ class Model:
             self._gcn_rnn_net.train()
             self._optimizer.zero_grad()
 
-            train_loss, _, _, _, _ = self.evaluate("train")
+            train_loss, _, _, _, _, _, _ = self.evaluate("train")
             # train_loss_list.append(train_loss)
             # train_accuracy_list.append(train_accuracy)
             # train_tot_accuracy_list.append(train_tot_accuracy)
@@ -280,18 +289,36 @@ class Model:
             # val_accuracy_list.append(validation_accuracy)
             # val_tot_accuracy_list.append(validation_tot_accuracy)
 
-            if epoch % self._print_every_num_of_opochs == self._print_every_num_of_opochs - 1:
+            if epoch % self._print_every_num_of_epochs == self._print_every_num_of_epochs - 1:
                 self._gcn_rnn_net.eval()
-                train_loss, train_accuracy, train_tot_accuracy, train_correlation, train_tot_correlation = self.evaluate(
-                    "train", evaluate_accuracy=True, evaluate_correlation=True)
-                validation_loss, validation_accuracy, validation_tot_accuracy, validation_correlation, validation_tot_correlation = self.evaluate(
-                    "validation", evaluate_accuracy=True, evaluate_correlation=True)
+                (
+                    train_loss,
+                    train_accuracy,
+                    train_tot_accuracy,
+                    train_correlation,
+                    train_tot_correlation,
+                    train_mae,
+                    train_tot_mae
+                ) = self.evaluate(
+                    "train", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
+                (
+                    validation_loss,
+                    validation_accuracy,
+                    validation_tot_accuracy,
+                    validation_correlation,
+                    validation_tot_correlation,
+                    validation_mae,
+                    validation_tot_mae
+                ) = self.evaluate(
+                    "validation", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
                 print(
                     f"epoch: {epoch + 1}, train loss: {train_loss.data.cpu().item():.5f}, validation loss:{validation_loss.data.cpu().item():.5f}, "
                     f"train accuracy: {train_accuracy:.5f}, validation accuracy: {validation_accuracy:.5f} "
                     f"train tot accuracy: {train_tot_accuracy:.5f}, validation tot accuracy: {validation_tot_accuracy:.5f} "
                     f"train correlation: {train_correlation:.5f}, validation correlation: {validation_correlation:.5f} "
                     f"train tot correlation: {train_tot_correlation:.5f}, validation tot correlation: {validation_tot_correlation:.5f} "
+                    f"train mean absolute error: {train_mae:.5f}, validation mean absolute error: {validation_mae:.5f} "
+                    f"train tot mean absolute error: {train_tot_mae:.5f}, validation tot mean absolute error: {validation_tot_mae:.5f} "
                 )
         return
 
@@ -321,12 +348,17 @@ class Model:
             return self._accruacy_metric(predictions_np, true_labels_np)
         if criterion == 'correlation':
             return pearsonr(predictions_np, true_labels_np)[0]
+        if criterion == 'mae':
+            return mean_absolute_error(predictions_np, true_labels_np)
 
     def _evaluate_accuracy(self, predictions, true_labels):
         return self._calc_criterion(predictions, true_labels, 'accuracy')
 
     def _evaluate_correlation(self, predictions, true_labels):
         return self._calc_criterion(predictions, true_labels, 'correlation')
+
+    def _evaluate_mae(self, predictions, true_labels):
+        return self._calc_criterion(predictions, true_labels, 'mae')
 
     def _evaluate_log_accuracy(self, predictions, true_labels):
         predictions_log = torch.log(predictions)
@@ -341,6 +373,7 @@ class Model:
         true_labels = []
         accuracies = []
         correlations = []
+        maes = []
         for idx, l in enumerate(stacked_labels[:-1]):
             true_labels.append(stacked_labels[idx + 1])
             predictions.append(l)
@@ -350,7 +383,9 @@ class Model:
                 predictions[-1], true_labels[-1]))
             correlations.append(self._evaluate_correlation(
                 predictions[-1], true_labels[-1]))
-        return losses, accuracies, correlations
+            maes.append(self._evaluate_mae(
+                predictions[-1], true_labels[-1]))
+        return losses, accuracies, correlations, maes
 
     def evaluate_zero_model_diff(self, labels, indices):
         stacked_labels = self._get_stacked_labels_by_indices_set(
@@ -360,6 +395,7 @@ class Model:
         true_labels = []
         accuracies = []
         correlations = []
+        maes = []
         for idx, l in enumerate(stacked_labels[:-1]):
             true_labels.append(stacked_labels[idx + 1]-l)
             predictions.append(torch.zeros(len(l), device=DEVICE))
@@ -369,7 +405,9 @@ class Model:
                 predictions[-1], true_labels[-1]))
             correlations.append(self._evaluate_correlation(
                 predictions[-1], true_labels[-1]))
-        return losses, accuracies, correlations
+            maes.append(self._evaluate_mae(
+                predictions[-1], true_labels[-1]))
+        return losses, accuracies, correlations, maes
 
     def evaluate_first_order_model_total_number(self, labels, indices):
         stacked_labels = self._get_stacked_labels_by_indices_set(
@@ -379,6 +417,7 @@ class Model:
         true_labels = []
         accuracies = []
         correlations = []
+        maes = []
         lin_reg_models = []
         time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
         for idx, n in enumerate(stacked_labels.T):
@@ -395,8 +434,10 @@ class Model:
                 predictions[idx], true_labels[idx]))
             correlations.append(self._evaluate_correlation(
                 predictions[idx], true_labels[idx]))
+            maes.append(self._evaluate_mae(
+                predictions[idx], true_labels[idx]))
 
-        return losses, accuracies, correlations
+        return losses, accuracies, correlations, maes
 
     def evaluate_first_order_model_diff(self, labels, indices):
         stacked_labels = self._get_stacked_labels_by_indices_set(
@@ -406,6 +447,7 @@ class Model:
         true_labels = []
         accuracies = []
         correlations = []
+        maes = []
         lin_reg_models = []
         time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
         for idx, n in enumerate(stacked_labels.T):
@@ -425,5 +467,7 @@ class Model:
                 predictions[idx], true_labels[idx]))
             correlations.append(self._evaluate_correlation(
                 predictions[idx], true_labels[idx]))
+            maes.append(self._evaluate_mae(
+                predictions[idx], true_labels[idx]))
 
-        return losses, accuracies, correlations
+        return losses, accuracies, correlations, maes
