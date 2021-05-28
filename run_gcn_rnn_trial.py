@@ -214,25 +214,9 @@ def run_trial(parameters):
     )
 
 
-def main():
+def run_one_test_iteration(params):
     global NNI
-    _params = {
-        "print_every_num_of_epochs": 100,
-        "data_folder_name": "dnc",
-        "data_name": "dnc_candidate_two",
-        "graphs_cutoff_number": 2,
-        "l1_lambda": 0,
-        "epochs": 500,
-        "gcn_dropout_rate": 0.7,
-        "lstm_dropout_rate": 0,
-        "gcn_hidden_sizes": [10, 10, 10, 10, 10, 10, 10, 10, 10],
-        "learning_rate": 0.001,
-        "weight_decay": 0,
-        "gcn_latent_dim": 5,
-        "lstm_hidden_size": 10,
-        "lstm_num_layers": 1,
-        "learned_label": DEFAULT_LABEL_TO_LEARN,
-    }
+
     l1_lambda = [0, 1e-7]
     epochs = [500]
     gcn_dropout_rate = [0.3, 0.5]
@@ -242,25 +226,6 @@ def main():
     gcn_latent_dim = [50, 100]
     lstm_hidden_size = [50, 100]
     results = []
-
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument("--nni", action='store_true')
-    argparser.add_argument("--data-folder-name", type=str,
-                           help="Folder name for dataset to evaluate")
-    argparser.add_argument("--data-name", type=str,
-                           help="Data pickle file name, without the .pkl extention")
-
-    args = argparser.parse_args()
-
-    _params.update({k: v for k, v in vars(args).items() if v is not None and (
-        k == "data_folder_name" or k == "data_name")})
-
-    NNI = args.nni
-
-    if NNI:
-        p = nni.get_next_parameter()
-        p["gcn_hidden_sizes"] = ast.literal_eval(p["gcn_hidden_sizes"])
-        _params.update(p)
 
     (
         model_loss,
@@ -286,7 +251,7 @@ def main():
         first_order_diff_accuracy,
         first_order_diff_correlation,
         first_order_diff_mae
-    ) = run_trial(_params)
+    ) = run_trial(params)
 
     if NNI:
         nni.report_final_result(
@@ -320,10 +285,10 @@ def main():
     )
 
 
-if __name__ == "__main__":
+def iterate_test(params):
     results = []
     for i in range(30):
-        results.append(main())
+        results.append(run_one_test_iteration(params))
     print('-'*100)
     for (
             model_tot_accuracy,
@@ -351,3 +316,52 @@ if __name__ == "__main__":
         print(f"Final result: model tot mae: {model_tot_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
               f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
               f"first order diff mae: {first_order_diff_mae}")
+    return results
+
+def prepare_params(params):
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("--nni", action='store_true')
+    argparser.add_argument("--data-folder-name", type=str,
+                           help="Folder name for dataset to evaluate")
+    argparser.add_argument("--data-name", type=str,
+                           help="Data pickle file name, without the .pkl extention")
+
+    args = argparser.parse_args()
+
+    params.update({k: v for k, v in vars(args).items() if v is not None and (
+        k == "data_folder_name" or k == "data_name")})
+
+    NNI = args.nni
+
+    if NNI:
+        p = nni.get_next_parameter()
+        p["gcn_hidden_sizes"] = ast.literal_eval(p["gcn_hidden_sizes"])
+        params.update(p)
+
+    return params
+
+def main():
+    _params = {
+        "print_every_num_of_epochs": 100,
+        "data_folder_name": "dnc",
+        "data_name": "dnc_candidate_two",
+        "graphs_cutoff_number": 2,
+        "l1_lambda": 0,
+        "epochs": 500,
+        "gcn_dropout_rate": 0.7,
+        "lstm_dropout_rate": 0,
+        "gcn_hidden_sizes": [10, 10, 10, 10, 10, 10, 10, 10, 10],
+        "learning_rate": 0.001,
+        "weight_decay": 0,
+        "gcn_latent_dim": 5,
+        "lstm_hidden_size": 10,
+        "lstm_num_layers": 1,
+        "learned_label": DEFAULT_LABEL_TO_LEARN,
+    }
+    
+    _params = prepare_params(_params)
+    
+    iterate_test(_params)
+
+if __name__ == "__main__":
+    main()
