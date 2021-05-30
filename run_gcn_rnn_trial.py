@@ -4,7 +4,8 @@ import pickle
 import numpy as np
 from lib.graph_measures.features_meta.features_meta import *
 from lib.graph_measures.features_infra.graph_features import GraphFeatures
-from utils.gcn_rnn_model import Model
+from utils.utils import GraphSeriesData
+from utils.gcn_rnn_model import GCNRNNModel
 
 import argparse
 
@@ -115,17 +116,11 @@ def run_trial(parameters):
     first_order_diff_accuracy_list = []
     first_order_diff_mae_list = []
 
-    model = Model(NNI, parameters)
-    model.load_data(
-        graphs,
-        feature_mx,
-        labels[-2],
-        labels[-1],
-        learned_label,
-        train,
-        test,
-        validation,
-    )
+    graph_data = GraphSeriesData()
+
+    graph_data.load_data(graphs, feature_mx, learned_label, labels[-2], labels[-1], train, test, validation)
+
+    model = GCNRNNModel(parameters, graph_data)
     model.train()
     with torch.no_grad():
         (
@@ -143,25 +138,25 @@ def run_trial(parameters):
             zero_model_tot_accuracy_list,
             zero_model_tot_correlation_list,
             zero_model_tot_mae_list
-        ) = model.evaluate_zero_model_total_num(labels, "test")
+        ) = graph_data.evaluate_zero_model_total_num(labels, "test")
         (
             first_order_tot_loss_list,
             first_order_tot_accuracy_list,
             first_order_tot_correlation_list,
             first_order_tot_mae_list
-        ) = model.evaluate_first_order_model_total_number(labels, "test")
+        ) = graph_data.evaluate_first_order_model_total_number(labels, "test")
         (
             zero_model_diff_loss_list,
             zero_model_diff_accuracy_list,
             zero_model_diff_correlation_list,
             zero_model_diff_mae_list
-        ) = model.evaluate_zero_model_diff(labels, "test")
+        ) = graph_data.evaluate_zero_model_diff(labels, "test")
         (
             first_order_diff_loss_list,
             first_order_diff_accuracy_list,
             first_order_diff_correlation_list,
             first_order_diff_mae_list
-        ) = model.evaluate_first_order_model_diff(labels, "test")
+        ) = graph_data.evaluate_first_order_model_diff(labels, "test")
 
     if NNI:
         nni.report_intermediate_result(
