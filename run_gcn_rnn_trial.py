@@ -18,9 +18,10 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 DEFAULT_FEATURES_META = {
-    # "betweenness_centrality": FeatureMeta(
-    #     BetweennessCentralityCalculator, {"betweenness"}
-    # ),
+    "betweenness_centrality": FeatureMeta(
+        BetweennessCentralityCalculator, {"betweenness"}
+    ),
+    "closeness": FeatureMeta(ClosenessCentralityCalculator, {"closeness"}),
     "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
     "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
     "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
@@ -55,28 +56,14 @@ def train_test_split(graphs, train_ratio):
     return train, test, validation
 
 
-def get_measures_from_graphs(
-    graphs: list,
-    features_meta: dict = DEFAULT_FEATURES_META,
-    dir_path: str = DEFAULT_OUT_DIR,
-) -> list:
-    labels = []
-    for g in graphs:
-        features = GraphFeatures(g, features_meta, dir_path)
-        features.build()
-        labels.append(features)
-    return labels
-
 
 def load_input(parameters: dict):
-    graphs = pickle.load(
+    graphs, labels = pickle.load(
         open(
             "./Pickles/" + str(parameters["data_folder_name"]) +
-            "/" + parameters["data_name"] + ".pkl", "rb"
+            "/" + parameters["data_name"] + "_with_labels" + ".pkl", "rb"
         )
     )
-    # labels = pickle.load(open("./pickles/" + str(parameters["data_name"]) + "/dnc_with_labels_candidate_one.pkl", "rb"))
-    labels = get_measures_from_graphs(graphs)
     all_nodes = set()
     for g in graphs:
         all_nodes.update(g.nodes())
@@ -363,7 +350,7 @@ def main():
         "gcn_latent_dim": 5,
         "lstm_hidden_size": 10,
         "lstm_num_layers": 1,
-        "learned_label": DEFAULT_LABEL_TO_LEARN,
+        "learned_label": None,
         "number_of_iterations_per_test": 30,
     }
 

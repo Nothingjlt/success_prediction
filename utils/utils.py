@@ -99,7 +99,7 @@ class GraphSeriesData():
             self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
             self._validation_labels_to_learn = self._validation_next_time_labels - \
                 self._validation_current_labels
-        
+
         else:
             self._train_labels_to_learn = self._train_next_time_labels
             self._test_labels_to_learn = self._test_next_time_labels
@@ -112,7 +112,7 @@ class GraphSeriesData():
     
     def _get_labels_by_indices(self, labels, indices):
         ret_labels = torch.tensor(
-            [labels[self._learned_label].features[self._idx_to_node_id[i]]
+            [labels[self._learned_label][self._idx_to_node_id[i]]
                 for i in indices],
             dtype=torch.float,
             device=self._device,
