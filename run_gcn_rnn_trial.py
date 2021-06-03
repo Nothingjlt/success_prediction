@@ -21,13 +21,13 @@ DEFAULT_FEATURES_META = {
     # "betweenness_centrality": FeatureMeta(
     #     BetweennessCentralityCalculator, {"betweenness"}
     # ),
-    # "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
-    # "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
-    # "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
+    "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
+    "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
+    "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
     "general": FeatureMeta(GeneralCalculator, {"gen"}),
 }
 
-DEFAULT_LABEL_TO_LEARN = "general"
+DEFAULT_LABEL_TO_LEARN = "kcore"
 
 DEFAULT_OUT_DIR = "out"
 
@@ -118,7 +118,8 @@ def run_trial(parameters):
 
     graph_data = GraphSeriesData()
 
-    graph_data.load_data(graphs, feature_mx, learned_label, labels[-2], labels[-1], train, test, validation)
+    graph_data.load_data(graphs, feature_mx, learned_label,
+                         labels[-2], labels[-1], train, test, validation)
 
     model = GCNRNNModel(parameters, graph_data)
     model.train()
@@ -282,7 +283,12 @@ def run_one_test_iteration(params):
 
 def iterate_test(params):
     results = []
-    for i in range(30):
+    output_file = open(
+        "./" + DEFAULT_OUT_DIR + "/" + str(params["data_folder_name"]) +
+        "/" + "_".join([params["learned_label"],
+                        params["data_name"]]) + ".out", "w"
+    )
+    for i in range(params["number_of_iterations_per_test"]):
         results.append(run_one_test_iteration(params))
     print('-'*100)
     for (
@@ -302,16 +308,21 @@ def iterate_test(params):
             first_order_diff_correlation,
             first_order_diff_mae
     ) in results:
-        print(f"Final result: model tot accuracy: {model_tot_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
-              f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
-              f"first order diff accuracy: {first_order_diff_accuracy}")
-        print(f"Final result: model tot correlation: {model_tot_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
-              f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
-              f"first order diff correlation: {first_order_diff_correlation}")
-        print(f"Final result: model tot mae: {model_tot_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
-              f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
-              f"first order diff mae: {first_order_diff_mae}")
+        output_string = "\n".join([f"Final result: model tot accuracy: {model_tot_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
+                                   f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
+                                   f"first order diff accuracy: {first_order_diff_accuracy}",
+                                   f"Final result: model tot correlation: {model_tot_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
+                                   f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
+                                   f"first order diff correlation: {first_order_diff_correlation}",
+                                   f"Final result: model tot mae: {model_tot_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
+                                   f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
+                                   f"first order diff mae: {first_order_diff_mae}"])
+        print(output_string)
+        output_file.write(output_string)
+        output_file.write("\n")
+    output_file.close()
     return results
+
 
 def prepare_params(params):
     argparser = argparse.ArgumentParser()
@@ -335,6 +346,7 @@ def prepare_params(params):
 
     return params
 
+
 def main():
     _params = {
         "print_every_num_of_epochs": 100,
@@ -352,11 +364,15 @@ def main():
         "lstm_hidden_size": 10,
         "lstm_num_layers": 1,
         "learned_label": DEFAULT_LABEL_TO_LEARN,
+        "number_of_iterations_per_test": 30,
     }
-    
+
     _params = prepare_params(_params)
-    
-    iterate_test(_params)
+
+    for learned_label in DEFAULT_FEATURES_META.keys():
+        _params["learned_label"] = learned_label
+        iterate_test(_params)
+
 
 if __name__ == "__main__":
     main()

@@ -93,22 +93,17 @@ class GraphSeriesData():
         self._validation_current_labels = self._get_labels_by_indices(
             current_timestamp_labels, self._validation_idx)
 
-        # Special case where both in_deg and out_deg are learned, reduce to deg.
+        # Special case where learning degree or rank, learn the difference between next and current time ranks.
         if self._learned_label == "general":
-
-            # Trials with Yoram
             self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
             self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
             self._validation_labels_to_learn = self._validation_next_time_labels - \
                 self._validation_current_labels
-
-            # End trials with Yoram
-            # self._train_next_time_labels = self._train_next_time_labels.sum(
-            #     dim=1).log()
-            # self._test_next_time_labels = self._test_next_time_labels.sum(
-            #     dim=1).log()
-            # self._validation_next_time_labels = self._validation_next_time_labels.sum(
-            #     dim=1).log()
+        
+        else:
+            self._train_labels_to_learn = self._train_next_time_labels
+            self._test_labels_to_learn = self._test_next_time_labels
+            self._validation_labels_to_learn = self._validation_next_time_labels
 
         self._train_idx = [self._node_id_to_idx[node] for node in train]
         self._test_idx = [self._node_id_to_idx[node] for node in test]
@@ -122,8 +117,9 @@ class GraphSeriesData():
             dtype=torch.float,
             device=self._device,
         )
-        # Special case where rank is required
+        # Special case where rank is required, calculate log(rank)
         if self._learned_label == "general":
+            # When in_deg and out_deg are calculated seperately, learn their sum.
             if ret_labels.dim() == 2:
                 ret_labels = ret_labels.sum(dim=1)
             ret_labels = torch.log(ret_labels)
