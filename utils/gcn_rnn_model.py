@@ -107,17 +107,13 @@ class GCNRNNModel:
             evaluation_set_next_labels
     ):
         metric = None
-        tot_metric = None
         if should_evaluate:
             metric = secondary_metric(
-                val_output, evaluation_set_learned_labels)
-            tot_metric = secondary_metric(
                 evaluation_set_current_labels + val_output, evaluation_set_next_labels)
 
-        return metric, tot_metric
+        return metric
 
     def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False, evaluate_correlation: bool = False, evaluate_mae: bool = False):
-        # self._gcn_rnn_net.eval()
 
         (
             evaluation_set_idx,
@@ -132,7 +128,7 @@ class GCNRNNModel:
 
         val_loss += self._l1_lambda * self._l1_norm()
 
-        accuracy, tot_accuracy = self._evaluate_secondary_metric(
+        accuracy = self._evaluate_secondary_metric(
             self._graph_series_data.evaluate_r2_score,
             evaluate_accuracy,
             val_output,
@@ -141,7 +137,7 @@ class GCNRNNModel:
             evaluation_set_next_labels
         )
 
-        correlation, tot_correlation = self._evaluate_secondary_metric(
+        correlation = self._evaluate_secondary_metric(
             self._graph_series_data.evaluate_correlation,
             evaluate_correlation,
             val_output,
@@ -150,7 +146,7 @@ class GCNRNNModel:
             evaluation_set_next_labels
         )
 
-        mae, tot_mae = self._evaluate_secondary_metric(
+        mae = self._evaluate_secondary_metric(
             self._graph_series_data.evaluate_mae,
             evaluate_mae,
             val_output,
@@ -159,7 +155,7 @@ class GCNRNNModel:
             evaluation_set_next_labels
         )
 
-        return val_loss, accuracy, tot_accuracy, correlation, tot_correlation, mae, tot_mae
+        return val_loss, accuracy, correlation, mae
 
     def train(self):
 
@@ -167,7 +163,7 @@ class GCNRNNModel:
             self._gcn_rnn_net.train()
             self._optimizer.zero_grad()
 
-            train_loss, _, _, _, _, _, _ = self.evaluate("train")
+            train_loss, _, _, _ = self.evaluate("train")
             train_loss.backward()
             self._optimizer.step()
 
@@ -176,11 +172,8 @@ class GCNRNNModel:
                 (
                     train_loss,
                     train_accuracy,
-                    train_tot_accuracy,
                     train_correlation,
-                    train_tot_correlation,
-                    train_mae,
-                    train_tot_mae
+                    train_mae
                 ) = self.evaluate(
                     "train",
                     evaluate_accuracy=True,
@@ -190,11 +183,8 @@ class GCNRNNModel:
                 (
                     validation_loss,
                     validation_accuracy,
-                    validation_tot_accuracy,
                     validation_correlation,
-                    validation_tot_correlation,
-                    validation_mae,
-                    validation_tot_mae
+                    validation_mae
                 ) = self.evaluate(
                     "validation",
                     evaluate_accuracy=True,
@@ -204,10 +194,7 @@ class GCNRNNModel:
                 print(
                     f"epoch: {epoch + 1}, train loss: {train_loss.data.cpu().item():.5f}, validation loss:{validation_loss.data.cpu().item():.5f}, "
                     f"train accuracy: {train_accuracy:.5f}, validation accuracy: {validation_accuracy:.5f} "
-                    f"train tot accuracy: {train_tot_accuracy:.5f}, validation tot accuracy: {validation_tot_accuracy:.5f} "
                     f"train correlation: {train_correlation:.5f}, validation correlation: {validation_correlation:.5f} "
-                    f"train tot correlation: {train_tot_correlation:.5f}, validation tot correlation: {validation_tot_correlation:.5f} "
                     f"train mean absolute error: {train_mae:.5f}, validation mean absolute error: {validation_mae:.5f} "
-                    f"train tot mean absolute error: {train_tot_mae:.5f}, validation tot mean absolute error: {validation_tot_mae:.5f} "
                 )
         return
