@@ -97,7 +97,15 @@ class GCNRNNModel:
             return
         return evaluation_set_idx, evaluation_set_learned_labels, evaluation_set_current_labels, evaluation_set_next_labels
 
-    def _evaluate_secondary_metric(self, secondary_metric, should_evaluate, val_output, evaluation_set_learned_labels, evaluation_set_current_labels, evaluation_set_next_labels):
+    def _evaluate_secondary_metric(
+            self,
+            secondary_metric,
+            should_evaluate,
+            val_output,
+            evaluation_set_learned_labels,
+            evaluation_set_current_labels,
+            evaluation_set_next_labels
+    ):
         metric = None
         tot_metric = None
         if should_evaluate:
