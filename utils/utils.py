@@ -26,6 +26,7 @@ class GraphSeriesData():
         feature_matrix,
         learned_label: str = "",
         labels_list: list = None,
+        learn_diffs: bool = True,
         train=None,
         test=None,
         validation=None,
@@ -93,37 +94,7 @@ class GraphSeriesData():
             labels_list[-2], self._validation_idx)
 
         # Special case where learning degree or rank, learn the difference between next and current time ranks.
-        if self._learned_label == "general":
-            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
-            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
-            self._validation_labels_to_learn = self._validation_next_time_labels - \
-                self._validation_current_labels
-
-        elif self._learned_label == "kcore":
-            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
-            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
-            self._validation_labels_to_learn = self._validation_next_time_labels - \
-                self._validation_current_labels
-
-        elif self._learned_label == "closeness":
-            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
-            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
-            self._validation_labels_to_learn = self._validation_next_time_labels - \
-                self._validation_current_labels
-
-        elif self._learned_label == "betweenness_centrality":
-            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
-            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
-            self._validation_labels_to_learn = self._validation_next_time_labels - \
-                self._validation_current_labels
-
-        elif self._learned_label == "load":
-            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
-            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
-            self._validation_labels_to_learn = self._validation_next_time_labels - \
-                self._validation_current_labels
-
-        elif self._learned_label == "pagerank":
+        if learn_diffs:
             self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
             self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
             self._validation_labels_to_learn = self._validation_next_time_labels - \

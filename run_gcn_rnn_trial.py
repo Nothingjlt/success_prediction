@@ -105,7 +105,7 @@ def run_trial(parameters):
     graph_data = GraphSeriesData()
 
     graph_data.load_data(graphs, feature_mx, learned_label,
-                         labels, train, test, validation)
+                         labels, True, train, test, validation)
 
     model = GCNRNNModel(parameters, graph_data)
     model.train()
