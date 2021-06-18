@@ -56,7 +56,6 @@ def train_test_split(graphs, train_ratio):
     return train, test, validation
 
 
-
 def load_input(parameters: dict):
     graphs, labels = pickle.load(
         open(
@@ -106,7 +105,7 @@ def run_trial(parameters):
     graph_data = GraphSeriesData()
 
     graph_data.load_data(graphs, feature_mx, learned_label,
-                         labels[-2], labels[-1], train, test, validation)
+                         labels, train, test, validation)
 
     model = GCNRNNModel(parameters, graph_data)
     model.train()
@@ -270,11 +269,10 @@ def run_one_test_iteration(params):
 
 def iterate_test(params):
     results = []
-    output_file = open(
-        "./" + DEFAULT_OUT_DIR + "/" + str(params["data_folder_name"]) +
-        "/" + "_".join([params["learned_label"],
-                        params["data_name"]]) + ".out", "w"
-    )
+    output_file_name = "./" + DEFAULT_OUT_DIR + "/" + \
+        str(params["data_folder_name"]) + "/" + \
+        "_".join([params["learned_label"], params["data_name"]]) + ".out"
+    output_file = open(output_file_name, "w")
     for i in range(params["number_of_iterations_per_test"]):
         results.append(run_one_test_iteration(params))
     print('-'*100)

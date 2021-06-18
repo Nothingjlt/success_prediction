@@ -25,8 +25,7 @@ class GraphSeriesData():
         gnxs: list,
         feature_matrix,
         learned_label: str = "",
-        current_timestamp_labels=None,
-        next_timestamp_labels=None,
+        labels_list: list = None,
         train=None,
         test=None,
         validation=None,
@@ -76,25 +75,55 @@ class GraphSeriesData():
         self._train_idx = [self._node_id_to_idx[node] for node in train]
         self._test_idx = [self._node_id_to_idx[node] for node in test]
         self._validation_idx = [self._node_id_to_idx[node]
-                               for node in validation]
+                                for node in validation]
 
         self._train_next_time_labels = self._get_labels_by_indices(
-            next_timestamp_labels, self._train_idx)
+            labels_list[-1], self._train_idx)
         self._train_current_labels = self._get_labels_by_indices(
-            current_timestamp_labels, self._train_idx)
+            labels_list[-2], self._train_idx)
 
         self._test_next_time_labels = self._get_labels_by_indices(
-            next_timestamp_labels, self._test_idx)
+            labels_list[-1], self._test_idx)
         self._test_current_labels = self._get_labels_by_indices(
-            current_timestamp_labels, self._test_idx)
+            labels_list[-2], self._test_idx)
 
         self._validation_next_time_labels = self._get_labels_by_indices(
-            next_timestamp_labels, self._validation_idx)
+            labels_list[-1], self._validation_idx)
         self._validation_current_labels = self._get_labels_by_indices(
-            current_timestamp_labels, self._validation_idx)
+            labels_list[-2], self._validation_idx)
 
         # Special case where learning degree or rank, learn the difference between next and current time ranks.
         if self._learned_label == "general":
+            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
+            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
+            self._validation_labels_to_learn = self._validation_next_time_labels - \
+                self._validation_current_labels
+
+        elif self._learned_label == "kcore":
+            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
+            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
+            self._validation_labels_to_learn = self._validation_next_time_labels - \
+                self._validation_current_labels
+
+        elif self._learned_label == "closeness":
+            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
+            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
+            self._validation_labels_to_learn = self._validation_next_time_labels - \
+                self._validation_current_labels
+
+        elif self._learned_label == "betweenness_centrality":
+            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
+            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
+            self._validation_labels_to_learn = self._validation_next_time_labels - \
+                self._validation_current_labels
+
+        elif self._learned_label == "load":
+            self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
+            self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
+            self._validation_labels_to_learn = self._validation_next_time_labels - \
+                self._validation_current_labels
+
+        elif self._learned_label == "pagerank":
             self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
             self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
             self._validation_labels_to_learn = self._validation_next_time_labels - \
@@ -108,8 +137,8 @@ class GraphSeriesData():
         self._train_idx = [self._node_id_to_idx[node] for node in train]
         self._test_idx = [self._node_id_to_idx[node] for node in test]
         self._validation_idx = [self._node_id_to_idx[node]
-                               for node in validation]
-    
+                                for node in validation]
+
     def _get_labels_by_indices(self, labels, indices):
         ret_labels = torch.tensor(
             [labels[self._learned_label][self._idx_to_node_id[i]]
@@ -124,17 +153,17 @@ class GraphSeriesData():
                 ret_labels = ret_labels.sum(dim=1)
             ret_labels = torch.log(ret_labels)
         return ret_labels
-    
+
     @property
     def data(self):
         return self._graph_series_data_list.clone()
-    
+
     def get_number_of_features(self):
         return self._number_of_features
-    
+
     def get_gcn_data(self):
         return self._graph_series_data_list
-    
+
     def get_train_data(self):
         return self._train_idx, self._train_labels_to_learn, self._train_current_labels, self._train_next_time_labels
 
@@ -172,7 +201,7 @@ class GraphSeriesData():
             return pearsonr(predictions_np, true_labels_np)[0]
         if criterion == 'mae':
             return mean_absolute_error(predictions_np, true_labels_np)
-    
+
     def evaluate_r2_score(self, predictions, true_labels):
         return self._calc_criterion(predictions, true_labels, 'r2_score')
 
@@ -186,7 +215,7 @@ class GraphSeriesData():
         predictions_log = torch.log(predictions)
         true_labels_log = torch.log(true_labels)
         return self.evaluate_r2_score(predictions_log, true_labels_log)
-    
+
     def evaluate_zero_model_total_num(self, labels, indices, loss_criterion=torch.nn.MSELoss()):
         stacked_labels = self._get_stacked_labels_by_indices_set(
             labels, indices)
@@ -293,3 +322,4 @@ class GraphSeriesData():
                 predictions[idx], true_labels[idx]))
 
         return losses, accuracies, correlations, maes
+
