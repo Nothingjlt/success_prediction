@@ -1,320 +1,34 @@
-import networkx as nx
-import torch
-import pickle
-import numpy as np
-from lib.graph_measures.features_meta.features_meta import *
-from lib.graph_measures.features_infra.graph_features import GraphFeatures
-from utils.utils import GraphSeriesData
 from utils.gcn_rnn_model import GCNRNNModel
-
-import argparse
-
+from utils.netscape_trial import NETSCAPETrial
 import ast
 import nni
 
-SEED = np.random.randint(0, 2 ^ 32)
 
-np.random.seed(SEED)
-torch.manual_seed(SEED)
+class GCNRNNTrial(NETSCAPETrial):
+    def __init__(self, parameters, seed=None):
+        super(GCNRNNTrial, self).__init__(parameters, seed)
 
-DEFAULT_FEATURES_META = {
-    "betweenness_centrality": FeatureMeta(
-        BetweennessCentralityCalculator, {"betweenness"}
-    ),
-    "closeness": FeatureMeta(ClosenessCentralityCalculator, {"closeness"}),
-    "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
-    "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
-    "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
-    "general": FeatureMeta(GeneralCalculator, {"gen"}),
-}
+    def _get_model(self, graph_data):
+        return GCNRNNModel(self._params, graph_data)
 
-DEFAULT_LABEL_TO_LEARN = "kcore"
+    def _should_learn_diff(self):
+        return True
 
-DEFAULT_OUT_DIR = "out"
+    def _cut_graphs_list(self, graphs_before_cut, labels_before_cut):
+        graphs_cutoff_number = self._params["graphs_cutoff_number"]
+        return graphs_before_cut[-graphs_cutoff_number:], labels_before_cut[-graphs_cutoff_number:]
 
+    def _add_specific_parser_arguments(self):
+        pass
 
-NNI = False
+    def _update_specific_parser_arguments(self, args):
+        if self._nni:
+            p = nni.get_next_parameter()
+            p["gcn_hidden_sizes"] = ast.literal_eval(p["gcn_hidden_sizes"])
+            self._params.update(p)
 
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-def train_test_split(graphs, train_ratio):
-    prev_graph = graphs[0]
-    all_intersection = np.array(prev_graph.nodes())
-    for g in graphs[1:]:
-        all_intersection = np.intersect1d(all_intersection, g.nodes())
-        prev_graph = g
-
-    print("# of nodes that appear at all timestamps", len(all_intersection))
-    val_test_inds = np.random.choice(
-        all_intersection, round(len(all_intersection) * (1-train_ratio)), replace=False
-    )
-    test, validation = np.array_split(val_test_inds, 2)
-    train = np.setdiff1d(np.array(all_intersection), val_test_inds)
-    e = 0
-    return train, test, validation
-
-
-def load_input(parameters: dict):
-    graphs, labels = pickle.load(
-        open(
-            "./Pickles/" + str(parameters["data_folder_name"]) +
-            "/" + parameters["data_name"] + "_with_labels" + ".pkl", "rb"
-        )
-    )
-    all_nodes = set()
-    for g in graphs:
-        all_nodes.update(g.nodes())
-    feature_mx = torch.eye(len(all_nodes))
-    adjacency_matrices = [nx.adjacency_matrix(g).tocoo() for g in graphs]
-    return graphs, labels, feature_mx, adjacency_matrices
-
-
-def run_trial(parameters):
-    global NNI
-    print(parameters)
-    learned_label = parameters["learned_label"]
-    graphs, labels, feature_mx, adjacency_matrices = load_input(parameters)
-    # GPU memory limited, using only subset of time steps
-    graphs_cutoff_number = parameters["graphs_cutoff_number"]
-    graphs = graphs[-graphs_cutoff_number:]
-    labels = labels[-graphs_cutoff_number:]
-    train, test, validation = train_test_split(graphs, train_ratio=0.7)
-
-    model_loss_list = []
-    model_accuracy_list = []
-    model_correlation_list = []
-    model_mae_list = []
-    zero_model_tot_loss_list = []
-    zero_model_tot_accuracy_list = []
-    zero_model_tot_mae_list = []
-    first_order_tot_loss_list = []
-    first_order_tot_accuracy_list = []
-    first_order_tot_mae_list = []
-    zero_model_diff_loss_list = []
-    zero_model_diff_accuracy_list = []
-    zero_model_diff_mae_list = []
-    first_order_diff_loss_list = []
-    first_order_diff_accuracy_list = []
-    first_order_diff_mae_list = []
-
-    graph_data = GraphSeriesData()
-
-    graph_data.load_data(graphs, feature_mx, learned_label,
-                         labels, True, train, test, validation)
-
-    model = GCNRNNModel(parameters, graph_data)
-    model.train()
-    with torch.no_grad():
-        (
-            test_loss,
-            test_accuracy,
-            test_correlation,
-            test_mae
-        ) = model.evaluate("test", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
-
-        (
-            zero_model_tot_loss_list,
-            zero_model_tot_accuracy_list,
-            zero_model_tot_correlation_list,
-            zero_model_tot_mae_list
-        ) = graph_data.evaluate_zero_model_total_num(labels, "test")
-        (
-            first_order_tot_loss_list,
-            first_order_tot_accuracy_list,
-            first_order_tot_correlation_list,
-            first_order_tot_mae_list
-        ) = graph_data.evaluate_first_order_model_total_number(labels, "test")
-        (
-            zero_model_diff_loss_list,
-            zero_model_diff_accuracy_list,
-            zero_model_diff_correlation_list,
-            zero_model_diff_mae_list
-        ) = graph_data.evaluate_zero_model_diff(labels, "test")
-        (
-            first_order_diff_loss_list,
-            first_order_diff_accuracy_list,
-            first_order_diff_correlation_list,
-            first_order_diff_mae_list
-        ) = graph_data.evaluate_first_order_model_diff(labels, "test")
-
-    if NNI:
-        nni.report_intermediate_result(
-            test_accuracy - zero_model_tot_accuracy_list[-1])
-
-    model_loss_list.append(test_loss)
-    model_accuracy_list.append(test_accuracy)
-    model_correlation_list.append(test_correlation)
-    model_mae_list.append(test_mae)
-
-    print(
-        f"test loss: {np.mean([m.data.item() for m in model_loss_list]):.5f}, test_accuracy: {np.mean(model_accuracy_list):.5f}, test_correlation: {np.mean(model_correlation_list):.5f}, test_mae: {np.mean(model_mae_list):.5f}")
-    print(
-        f"zero model loss: {np.mean([m.data.item() for m in zero_model_tot_loss_list]):.5f}, zero model accuracy: {np.mean(zero_model_tot_accuracy_list):.5f}, zero model correlation: {np.mean(zero_model_tot_correlation_list):.5f}, zero model mae: {np.mean(zero_model_tot_mae_list):.5f}")
-    print(
-        f"first order model loss: {np.mean([m.data.item() for m in first_order_tot_loss_list]):.5f}, first order model accuracy: {np.mean(first_order_tot_accuracy_list):.5f}, first order model correlation: {np.mean(first_order_tot_correlation_list):.5f}, first order model mae: {np.mean(first_order_tot_mae_list):.5f}")
-    print(
-        f"zero diff model loss: {np.mean([m.data.item() for m in zero_model_diff_loss_list]):.5f}, zero diff model accuracy: {np.mean(zero_model_diff_accuracy_list):.5f}, zero diff model correlation: {np.mean(zero_model_diff_correlation_list):.5f}, zero diff model mae: {np.mean(zero_model_diff_mae_list):.5f}")
-    print(
-        f"first order diff model loss: {np.mean([m.data.item() for m in first_order_diff_loss_list]):.5f}, first order diff model accuracy: {np.mean(first_order_diff_accuracy_list):.5f}, first order diff model correlation: {np.mean(first_order_diff_correlation_list):.5f}, first order diff model mae: {np.mean(first_order_diff_mae_list):.5f}")
-    print("\n")
-
-    return (
-        [m.data.item() for m in model_loss_list],
-        model_accuracy_list,
-        model_correlation_list,
-        model_mae_list,
-        [m.data.item() for m in zero_model_tot_loss_list],
-        zero_model_tot_accuracy_list,
-        zero_model_tot_correlation_list,
-        zero_model_tot_mae_list,
-        [m.data.item() for m in first_order_tot_loss_list],
-        first_order_tot_accuracy_list,
-        first_order_tot_correlation_list,
-        first_order_tot_mae_list,
-        [m.data.item() for m in zero_model_diff_loss_list],
-        zero_model_diff_accuracy_list,
-        zero_model_diff_correlation_list,
-        zero_model_diff_mae_list,
-        [m.data.item() for m in first_order_diff_loss_list],
-        first_order_diff_accuracy_list,
-        first_order_diff_correlation_list,
-        first_order_diff_mae_list
-    )
-
-
-def run_one_test_iteration(params):
-    global NNI
-
-    l1_lambda = [0, 1e-7]
-    epochs = [500]
-    gcn_dropout_rate = [0.3, 0.5]
-    gcn_hidden_sizes = [[100, 100], [200, 200]]
-    learning_rate = [1e-3, 1e-2, 3e-2]
-    weight_decay = [5e-2, 1e-2]
-    gcn_latent_dim = [50, 100]
-    lstm_hidden_size = [50, 100]
-    results = []
-
-    (
-        model_loss,
-        model_accuracy,
-        model_correlation,
-        model_mae,
-        zero_model_tot_loss,
-        zero_model_tot_accuracy,
-        zero_model_tot_correlation,
-        zero_model_tot_mae,
-        first_order_tot_loss,
-        first_order_tot_accuracy,
-        first_order_tot_correlation,
-        first_order_tot_mae,
-        zero_model_diff_loss,
-        zero_model_diff_accuracy,
-        zero_model_diff_correlation,
-        zero_model_diff_mae,
-        first_order_diff_loss,
-        first_order_diff_accuracy,
-        first_order_diff_correlation,
-        first_order_diff_mae
-    ) = run_trial(params)
-
-    if NNI:
-        nni.report_final_result(
-            model_accuracy[0]-zero_model_tot_accuracy[-1])
-    else:
-        print(f"Final result (accruacy): model accuracy: {model_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
-              f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
-              f"first order diff accuracy: {first_order_diff_accuracy}")
-        print(f"Final result (correlation): model correlation: {model_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
-              f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
-              f"first order diff correlation: {first_order_diff_correlation}")
-        print(f"Final result (mae): model mae: {model_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
-              f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
-              f"first order diff mae: {first_order_diff_mae}")
-    return (
-        model_accuracy,
-        model_correlation,
-        model_mae,
-        zero_model_tot_accuracy,
-        zero_model_tot_correlation,
-        zero_model_tot_mae,
-        first_order_tot_accuracy,
-        first_order_tot_correlation,
-        first_order_tot_mae,
-        zero_model_diff_accuracy,
-        zero_model_diff_correlation,
-        zero_model_diff_mae,
-        first_order_diff_accuracy,
-        first_order_diff_correlation,
-        first_order_diff_mae
-    )
-
-
-def iterate_test(params):
-    results = []
-    output_file_name = "./" + DEFAULT_OUT_DIR + "/" + \
-        str(params["data_folder_name"]) + "/" + \
-        "_".join([params["learned_label"], params["data_name"]]) + ".out"
-    output_file = open(output_file_name, "w")
-    for i in range(params["number_of_iterations_per_test"]):
-        results.append(run_one_test_iteration(params))
-    print('-'*100)
-    for (
-            model_accuracy,
-            model_correlation,
-            model_mae,
-            zero_model_tot_accuracy,
-            zero_model_tot_correlation,
-            zero_model_tot_mae,
-            first_order_tot_accuracy,
-            first_order_tot_correlation,
-            first_order_tot_mae,
-            zero_model_diff_accuracy,
-            zero_model_diff_correlation,
-            zero_model_diff_mae,
-            first_order_diff_accuracy,
-            first_order_diff_correlation,
-            first_order_diff_mae
-    ) in results:
-        output_string = "\n".join([f"Final result: model accuracy: {model_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
-                                   f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
-                                   f"first order diff accuracy: {first_order_diff_accuracy}",
-                                   f"Final result: model correlation: {model_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
-                                   f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
-                                   f"first order diff correlation: {first_order_diff_correlation}",
-                                   f"Final result: model mae: {model_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
-                                   f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
-                                   f"first order diff mae: {first_order_diff_mae}"])
-        print(output_string)
-        output_file.write(output_string)
-        output_file.write("\n")
-    output_file.close()
-    return results
-
-
-def prepare_params(params):
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument("--nni", action='store_true')
-    argparser.add_argument("--data-folder-name", type=str,
-                           help="Folder name for dataset to evaluate")
-    argparser.add_argument("--data-name", type=str,
-                           help="Data pickle file name, without the .pkl extention")
-
-    args = argparser.parse_args()
-
-    params.update({k: v for k, v in vars(args).items() if v is not None and (
-        k == "data_folder_name" or k == "data_name")})
-
-    NNI = args.nni
-
-    if NNI:
-        p = nni.get_next_parameter()
-        p["gcn_hidden_sizes"] = ast.literal_eval(p["gcn_hidden_sizes"])
-        params.update(p)
-
-    return params
+    def _get_trial_name(self):
+        return "GCNRNN"
 
 
 def main():
@@ -337,11 +51,9 @@ def main():
         "number_of_iterations_per_test": 30,
     }
 
-    _params = prepare_params(_params)
+    trial = GCNRNNTrial(_params)
 
-    for learned_label in DEFAULT_FEATURES_META.keys():
-        _params["learned_label"] = learned_label
-        iterate_test(_params)
+    trial.run_full_trial()
 
 
 if __name__ == "__main__":
