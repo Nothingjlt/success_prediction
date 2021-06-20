@@ -1,4 +1,4 @@
-from utils.gcn_rnn_model import GCNRNNModel
+from utils.models.gcn_rnn_model import GCNRNNModel
 from utils.netscape_trial import NETSCAPETrial
 import ast
 import nni

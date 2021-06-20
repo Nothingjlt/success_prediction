@@ -1,6 +1,6 @@
 import torch
-from utils.gcn_rnn_net import GCNRNNNet
-from utils.netscape_model import NETSCAPEModel
+from utils.nets.gcn_rnn_net import GCNRNNNet
+from utils.models.netscape_model import NETSCAPEModel
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

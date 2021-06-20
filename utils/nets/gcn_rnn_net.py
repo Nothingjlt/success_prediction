@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from utils.gcn_nets import GCNSeriesNet
+from utils.nets.gcn_nets import GCNSeriesNet
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
