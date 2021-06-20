@@ -2,9 +2,11 @@ import networkx as nx
 import torch
 import pickle
 import numpy as np
+import pandas as pd
 from lib.graph_measures.features_meta.features_meta import *
 from utils.utils import GraphSeriesData
 from abc import ABCMeta, abstractmethod
+from collections import namedtuple
 
 import argparse
 
@@ -13,6 +15,27 @@ import nni
 
 
 class NETSCAPETrial(metaclass=ABCMeta):
+    results_type = namedtuple(
+        "Results",
+        [
+            "model_accuracy",
+            "model_correlation",
+            "model_mae",
+            "zero_model_tot_accuracy",
+            "zero_model_tot_correlation",
+            "zero_model_tot_mae",
+            "first_order_tot_accuracy",
+            "first_order_tot_correlation",
+            "first_order_tot_mae",
+            "zero_model_diff_accuracy",
+            "zero_model_diff_correlation",
+            "zero_model_diff_mae",
+            "first_order_diff_accuracy",
+            "first_order_diff_correlation",
+            "first_order_diff_mae"
+        ]
+    )
+
     def __init__(self, parameters, seed=None):
         self._seed = np.random.randint(0, 2 ^ 32) if seed is None else seed
         np.random.seed(self._seed)
@@ -260,40 +283,22 @@ class NETSCAPETrial(metaclass=ABCMeta):
             str(self._params["data_folder_name"]) + "/" + \
             "_".join([self._params["learned_label"],
                       self._params["data_name"], self._get_trial_name()]) + ".out"
-        output_file = open(output_file_name, "w")
+        logger = TrialSummary(output_file_name)
         for i in range(self._params["number_of_iterations_per_test"]):
-            results.append(self.run_one_test_iteration(self._params))
+            results.append(self.results_type(*self.run_one_test_iteration(self._params)))
         print('-'*100)
-        for (
-                model_accuracy,
-                model_correlation,
-                model_mae,
-                zero_model_tot_accuracy,
-                zero_model_tot_correlation,
-                zero_model_tot_mae,
-                first_order_tot_accuracy,
-                first_order_tot_correlation,
-                first_order_tot_mae,
-                zero_model_diff_accuracy,
-                zero_model_diff_correlation,
-                zero_model_diff_mae,
-                first_order_diff_accuracy,
-                first_order_diff_correlation,
-                first_order_diff_mae
-        ) in results:
-            output_string = "\n".join([f"Final result: model accuracy: {model_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
-                                       f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
-                                       f"first order diff accuracy: {first_order_diff_accuracy}",
-                                       f"Final result: model correlation: {model_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
-                                       f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
-                                       f"first order diff correlation: {first_order_diff_correlation}",
-                                       f"Final result: model mae: {model_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
-                                       f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
-                                       f"first order diff mae: {first_order_diff_mae}"])
+        for result in results:
+            output_string = "\n".join([f"Final result: model accuracy: {result.model_accuracy}, zero_model_tot_accuracy: {result.zero_model_tot_accuracy}, "
+                                       f"first order tot accuracy: {result.first_order_tot_accuracy}, zero model diff accuracy: {result.zero_model_diff_accuracy}, "
+                                       f"first order diff accuracy: {result.first_order_diff_accuracy}",
+                                       f"Final result: model correlation: {result.model_correlation}, zero_model_tot_correlation: {result.zero_model_tot_correlation}, "
+                                       f"first order tot correlation: {result.first_order_tot_correlation}, zero model diff correlation: {result.zero_model_diff_correlation}, "
+                                       f"first order diff correlation: {result.first_order_diff_correlation}",
+                                       f"Final result: model mae: {result.model_mae}, zero_model_tot_mae: {result.zero_model_tot_mae}, "
+                                       f"first order tot mae: {result.first_order_tot_mae}, zero model diff mae: {result.zero_model_diff_mae}, "
+                                       f"first order diff mae: {result.first_order_diff_mae}"])
             print(output_string)
-            output_file.write(output_string)
-            output_file.write("\n")
-        output_file.close()
+        logger.write_output(results)
         return results
 
     def _add_general_parser_arguments(self):
@@ -340,3 +345,17 @@ class NETSCAPETrial(metaclass=ABCMeta):
         for learned_label in self._default_features_meta.keys():
             self.set_learned_label(learned_label)
             self.iterate_test()
+
+
+class TrialSummary:
+    def __init__(self, output_file_name):
+        self._output_file_name = output_file_name+".csv"
+
+    def write_output(self, results):
+        df = pd.DataFrame()
+        for single_test_result_index, single_test_result in enumerate(results):
+            for result_type, result_list in single_test_result._asdict().items():
+                for single_result_index, single_result in enumerate(result_list):
+                    df.at[result_type+f"_{single_result_index}", single_test_result_index] = single_result
+        with open(self._output_file_name, 'w') as output_file:
+            df.to_csv(output_file, sep=",")
