@@ -34,32 +34,33 @@ def get_statistics(x, y, alternative):
 
 def prepare_file_df(root, file_name):
     measure = file_name.split("_")[0]
-    df = pd.read_csv(os.path.join(root, file_name), delimiter='\t', names=COL_NAMES).T
+    df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
     statistics = {}
-    statistics["acc"] = get_statistics(df.loc["models_acc"], df.loc["null_models_acc"], alternative="greater")
-    statistics["corr"] = get_statistics(df.loc["models_corr"], df.loc["null_models_corr"], alternative="greater")
-    statistics["mae"] = get_statistics(df.loc["models_mae"], df.loc["null_models_mae"], alternative="less")
+    statistics["accuracy_0"] = get_statistics(df.loc["model_accuracy_0"], df.loc["zero_model_tot_accuracy_0"], alternative="greater")
+    statistics["correlation_0"] = get_statistics(df.loc["model_correlation_0"], df.loc["zero_model_tot_correlation_0"], alternative="greater")
+    statistics["mae_0"] = get_statistics(df.loc["model_mae_0"], df.loc["zero_model_tot_mae_0"], alternative="less")
+    df = df.loc[[ item for sublist in [[f"model_{k}", f"zero_model_tot_{k}"] for k in statistics.keys()] for item in sublist]]
     for k, v in statistics.items():
-        df.at[f"models_{k}", "one_sided_paired_t_value"] = v[0]
-        df.at[f"models_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
-        df.at[f"models_{k}", "wilcoxon_statistic"] = v[2]
-        df.at[f"models_{k}", "wilcoxon_pvalue"] = v[3]
-        df.at[f"null_models_{k}", "one_sided_paired_t_value"] = v[0]
-        df.at[f"null_models_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
-        df.at[f"null_models_{k}", "wilcoxon_statistic"] = v[2]
-        df.at[f"null_models_{k}", "wilcoxon_pvalue"] = v[3]
+        df.at[f"model_{k}", "one_sided_paired_t_value"] = v[0]
+        df.at[f"model_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
+        df.at[f"model_{k}", "wilcoxon_statistic"] = v[2]
+        df.at[f"model_{k}", "wilcoxon_pvalue"] = v[3]
+        df.at[f"zero_model_tot_{k}", "one_sided_paired_t_value"] = v[0]
+        df.at[f"zero_model_tot_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
+        df.at[f"zero_model_tot_{k}", "wilcoxon_statistic"] = v[2]
+        df.at[f"zero_model_tot_{k}", "wilcoxon_pvalue"] = v[3]
     df["measure"] = measure
     df["dataset"] = file_name
-    return df.loc[[ item for sublist in [[f"models_{k}", f"null_models_{k}"] for k in statistics.keys()] for item in sublist]]
+    return df
 
-def analyze_file(
+def analyze_GCNRNN_files_in_outdir(
     out_files_dir: str = r"C:\Users\nothi\Google Drive\Studies\Courses\Thesis\from_dsi\success_prediction\out",
     output_file_name: str = r"C:\Users\nothi\Google Drive\Studies\Courses\Thesis\research proposal\all_summary_raw_data_df.txt"
 ):
     master_df = pd.DataFrame()
     for r, d, files in os.walk(out_files_dir):
         for f in files:
-            if f.endswith(".csv"):
+            if f.endswith("_GCNRNN.out.csv"):
                 df = prepare_file_df(r, f)
                 master_df = pd.concat([master_df, df])
     print(master_df)
@@ -69,9 +70,10 @@ def analyze_file(
 
 def main():
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('file_name', type=str, help="name of file to parse")
+    argparser.add_argument('output_file_name', type=str, help="path to output file")
+    argparser.add_argument('folder_to_iterate', type=str, help="path to folder to recurse and parse")
     args = argparser.parse_args()
-    read_from_file(args.file_name)
+    analyze_GCNRNN_files_in_outdir(args.folder_to_iterate, args.output_file_name)
 
 
 if __name__ == '__main__':
