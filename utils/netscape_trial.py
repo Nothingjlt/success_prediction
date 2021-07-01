@@ -117,8 +117,8 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         graph_data = GraphSeriesData()
 
-        graph_data.load_data(graphs, feature_mx, learned_label,
-                             labels, self._should_learn_diff(), train, test, validation)
+        graph_data.load_data(graphs, feature_mx, learned_label=learned_label,
+                             labels_list=labels, learn_logs=self._should_learn_logs(), learn_diffs=self._should_learn_diff(), train=train, test=test, validation=validation)
 
         model = self._get_model(graph_data)
         model.train()
@@ -205,6 +205,10 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
     @abstractmethod
     def _should_learn_diff(self):
+        pass
+
+    @abstractmethod
+    def _should_learn_logs(self):
         pass
 
     @abstractmethod

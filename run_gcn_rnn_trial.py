@@ -2,6 +2,7 @@ from utils.models.gcn_rnn_model import GCNRNNModel
 from utils.netscape_trial import NETSCAPETrial
 import ast
 import nni
+from lib.graph_measures.features_meta.features_meta import *
 
 
 class GCNRNNTrial(NETSCAPETrial):
@@ -12,6 +13,9 @@ class GCNRNNTrial(NETSCAPETrial):
         return GCNRNNModel(self._params, graph_data)
 
     def _should_learn_diff(self):
+        return True
+
+    def _should_learn_logs(self):
         return True
 
     def _cut_graphs_list(self, graphs_before_cut, labels_before_cut):
@@ -52,6 +56,17 @@ def main():
     }
 
     trial = GCNRNNTrial(_params)
+
+    trial._default_features_meta = {
+            # "betweenness_centrality": FeatureMeta(
+            #     BetweennessCentralityCalculator, {"betweenness"}
+            # ),
+            "closeness": FeatureMeta(ClosenessCentralityCalculator, {"closeness"}),
+            "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
+            "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
+            "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
+            "general": FeatureMeta(GeneralCalculator, {"gen"}),
+        }
 
     trial.run_full_trial()
 

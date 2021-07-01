@@ -26,6 +26,7 @@ class GraphSeriesData():
         feature_matrix,
         learned_label: str = "",
         labels_list: list = None,
+        learn_logs: bool = False,
         learn_diffs: bool = True,
         train=None,
         test=None,
@@ -36,6 +37,9 @@ class GraphSeriesData():
         self._number_of_features = feature_matrix.shape[1]
 
         self._learned_label = learned_label
+
+        self._learn_logs = learn_logs
+        self._learn_diffs = learn_diffs
 
         all_nodes_set = set()
         for gnx in gnxs:
@@ -57,6 +61,8 @@ class GraphSeriesData():
                            for node in nodes]),
                 device=self._device,
             )
+
+            # x = torch.randn(10, self._num_of_nodes, device=self._device)
 
             edges = torch.tensor(
                 np.vstack(
@@ -94,7 +100,7 @@ class GraphSeriesData():
             labels_list[-2], self._validation_idx)
 
         # Special case where learning degree or rank, learn the difference between next and current time ranks.
-        if learn_diffs:
+        if self._learn_diffs:
             self._train_labels_to_learn = self._train_next_time_labels - self._train_current_labels
             self._test_labels_to_learn = self._test_next_time_labels - self._test_current_labels
             self._validation_labels_to_learn = self._validation_next_time_labels - \
@@ -122,6 +128,7 @@ class GraphSeriesData():
             # When in_deg and out_deg are calculated seperately, learn their sum.
             if ret_labels.dim() == 2:
                 ret_labels = ret_labels.sum(dim=1)
+        if self._learn_logs:
             ret_labels = torch.log(ret_labels)
         return ret_labels
 
@@ -166,6 +173,9 @@ class GraphSeriesData():
     def _calc_criterion(self, predictions, true_labels, criterion):
         predictions_np = predictions.cpu().detach().numpy()
         true_labels_np = true_labels.cpu().detach().numpy()
+        if self._learn_logs:
+            predictions_np = np.exp(predictions_np)
+            true_labels_np = np.exp(true_labels_np)
         if criterion == 'r2_score':
             return r2_score(predictions_np, true_labels_np)
         if criterion == 'correlation':
