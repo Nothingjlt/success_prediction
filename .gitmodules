@@ -4,3 +4,6 @@
 [submodule "lib/TCN"]
 	path = lib/TCN
 	url = https://github.com/locuslab/TCN.git
+[submodule "lib/docker-openssh-server"]
+	path = lib/docker-openssh-server
+	url = https://github.com/linuxserver/docker-openssh-server.git
