@@ -13,11 +13,11 @@ ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y build-essential
 
-RUN python3 -m pip install torch-scatter -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
-python3 -m pip install torch-sparse -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
-python3 -m pip install torch-cluster -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
-python3 -m pip install torch-spline-conv -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
-python3 -m pip install torch-geometric
+RUN python3 -m pip install torch-scatter==2.0.6 -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
+python3 -m pip install torch-sparse==0.6.9 -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
+python3 -m pip install torch-cluster==1.5.9 -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
+python3 -m pip install torch-spline-conv==1.2.1 -f https://pytorch-geometric.com/whl/torch-1.7.0+cu110.html && \
+python3 -m pip install torch-geometric==1.7.0
 
 # Install pip requirements
 COPY python_env_requirements_docker.txt .
