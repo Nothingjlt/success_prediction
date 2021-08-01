@@ -9,7 +9,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class GraphSeriesData():
-    def __init__(self):
+    def __init__(self, log_guard_scale):
         self._device = DEVICE
         self._train_idx = None
         self._test_idx = None
@@ -19,11 +19,14 @@ class GraphSeriesData():
         self._num_of_nodes = 0
         self._node_id_to_idx = {}
         self._idx_to_node_id = {}
+        self._log_guard_scale = log_guard_scale
 
     def load_data(
         self,
         gnxs: list,
         feature_matrix,
+        user_node_id_to_idx: dict = None,
+        user_idx_to_node_id: dict = None,
         learned_label: str = "",
         labels_list: list = None,
         learn_logs: bool = False,
@@ -57,12 +60,10 @@ class GraphSeriesData():
             gnx.add_nodes_from(all_nodes_set)
             nodes = gnx.nodes()
             x = torch.tensor(
-                np.vstack([feature_matrix[self._node_id_to_idx[node]]
+                np.vstack([feature_matrix[user_node_id_to_idx[node]]
                            for node in nodes]),
                 device=self._device,
             )
-
-            # x = torch.randn(10, self._num_of_nodes, device=self._device)
 
             edges = torch.tensor(
                 np.vstack(
@@ -129,7 +130,8 @@ class GraphSeriesData():
             if ret_labels.dim() == 2:
                 ret_labels = ret_labels.sum(dim=1)
         if self._learn_logs:
-            ret_labels = torch.log(ret_labels)
+            eps = ret_labels[ret_labels>0].min()/self._log_guard_scale
+            ret_labels = torch.log(ret_labels+eps)
         return ret_labels
 
     @property
