@@ -24,7 +24,7 @@ class GraphSeriesData():
     def load_data(
         self,
         gnxs: list,
-        feature_matrix,
+        graph_features,
         user_node_id_to_idx: dict = None,
         user_idx_to_node_id: dict = None,
         learned_label: str = "",
@@ -36,8 +36,6 @@ class GraphSeriesData():
         validation=None,
     ):
         self._graph_series_data_list = []
-
-        self._number_of_features = feature_matrix.shape[1]
 
         self._learned_label = learned_label
 
@@ -56,14 +54,19 @@ class GraphSeriesData():
         self._idx_to_node_id = {i: x for i,
                                 x in enumerate(self._all_nodes_list)}
 
-        for gnx in gnxs:
-            gnx.add_nodes_from(all_nodes_set)
-            nodes = gnx.nodes()
-            x = torch.tensor(
-                np.vstack([feature_matrix[user_node_id_to_idx[node]]
-                           for node in nodes]),
-                device=self._device,
-            )
+        feature_matrices = self._get_features_by_indices(
+            graph_features,
+            self._all_nodes_list
+        )
+        self._number_of_features = feature_matrices[0].shape[1]
+
+        for gnx, feature_matrix in zip(gnxs, feature_matrices):
+            # x = torch.vstack(
+            #     [
+            #         feature_matrix[self._node_id_to_idx[node_id], :] for node_id in gnx.nodes()
+            #     ]
+            # )
+            x = feature_matrix
 
             edges = torch.tensor(
                 np.vstack(
@@ -117,20 +120,55 @@ class GraphSeriesData():
         self._validation_idx = [self._node_id_to_idx[node]
                                 for node in validation]
 
-    def _get_labels_by_indices(self, labels, indices):
-        ret_labels = torch.tensor(
-            [labels[self._learned_label][self._idx_to_node_id[i]]
-                for i in indices],
+    def _get_values_by_indices(self, values, key, indices, default_dict_value=0):
+        ret_values = torch.tensor(
+            [values[key].get(self._idx_to_node_id[i], default_dict_value)
+             for i in indices],
             dtype=torch.float,
             device=self._device,
         )
+        return ret_values
+
+    def _get_features_by_indices(self, features, node_idxs):
+        indices = [self._node_id_to_idx[node_id] for node_id in node_idxs]
+        ret_features = []
+        for time_step_features in features:
+            all_features = torch.empty(
+                (
+                    self._num_of_nodes,
+                    1
+                ),
+                dtype=torch.float,
+                device=self._device
+            )
+            for key in time_step_features.keys():
+                new_features = self._get_values_by_indices(
+                    time_step_features,
+                    key,
+                    indices,
+                    default_dict_value=0
+                )
+                all_features = torch.cat(
+                    (
+                        all_features,
+                        new_features.view(-1, 1)
+                    ),
+                    dim=1
+                )
+            all_features = all_features[:, 1:]
+            ret_features.append(all_features)
+        return ret_features
+
+    def _get_labels_by_indices(self, labels, indices):
+        ret_labels = self._get_values_by_indices(
+            labels, self._learned_label, indices)
         # Special case where rank is required, calculate log(rank)
         if self._learned_label == "general":
             # When in_deg and out_deg are calculated seperately, learn their sum.
             if ret_labels.dim() == 2:
                 ret_labels = ret_labels.sum(dim=1)
         if self._learn_logs:
-            eps = ret_labels[ret_labels>0].min()/self._log_guard_scale
+            eps = ret_labels[ret_labels > 0].min()/self._log_guard_scale
             ret_labels = torch.log(ret_labels+eps)
         return ret_labels
 
@@ -305,4 +343,3 @@ class GraphSeriesData():
                 predictions[idx], true_labels[idx]))
 
         return losses, accuracies, correlations, maes
-

@@ -1,4 +1,5 @@
 import networkx as nx
+from numpy.lib.arraysetops import isin
 import torch
 import pickle
 import numpy as np
@@ -45,11 +46,24 @@ class NETSCAPETrial(metaclass=ABCMeta):
             "betweenness_centrality": FeatureMeta(
                 BetweennessCentralityCalculator, {"betweenness"}
             ),
-            "closeness": FeatureMeta(ClosenessCentralityCalculator, {"closeness"}),
-            "kcore": FeatureMeta(KCoreCalculator, {"kcore"}),
-            "load": FeatureMeta(LoadCentralityCalculator, {"load"}),
-            "pagerank": FeatureMeta(PageRankCalculator, {"page"}),
+            "closeness_centrality": FeatureMeta(ClosenessCentralityCalculator, {"closeness"}),
+            "k_core": FeatureMeta(KCoreCalculator, {"kcore"}),
+            "load_centrality": FeatureMeta(LoadCentralityCalculator, {"load"}),
+            "page_rank": FeatureMeta(PageRankCalculator, {"page"}),
             "general": FeatureMeta(GeneralCalculator, {"gen"}),
+        }
+        self._undirected_features_names_to_lengths = {
+            'average_neighbor_degree': 1,
+            'eccentricity': 1,
+            'fiedler_vector': 1,
+            'louvain': 1,
+            'motif3': 2,
+            'motif4': 6,
+            'eigenvector_centrality': 1,
+            'clustering_coefficient': 1,
+            'square_clustering_coefficient': 1,
+            # actually a list of length 1 containing a tuple of length 2
+            'bfs_moments': [1, 2]
         }
 
         self._default_label_to_learn = "kcore"
@@ -57,7 +71,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         self._nni = False
         self._device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
-    
+
     def _set_seed(self, seed):
         self._seed = seed
         np.random.seed(self._seed)
@@ -65,8 +79,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         import random
         random.seed = self._seed
         import os
-        os.environ['PYTHONHASHSEED']=str(self._seed)
-
+        os.environ['PYTHONHASHSEED'] = str(self._seed)
 
     @staticmethod
     def train_test_split(graphs, train_ratio):
@@ -86,15 +99,18 @@ class NETSCAPETrial(metaclass=ABCMeta):
         return train, test, validation
 
     def load_input(self):
-        graphs, labels = pickle.load(
+        graphs, all_features = pickle.load(
             open(
                 "./Pickles/" + str(self._params["data_folder_name"]) +
-                "/" + self._params["data_name"] + "_with_labels" + ".pkl", "rb"
+                "/" + self._params["data_name"] +
+                "_with_features" + ".pkl", "rb"
             )
         )
         all_nodes = set()
         for g in graphs:
             all_nodes.update(g.nodes())
+        
+        self._directed = g.is_directed()
 
         self._all_nodes_list = sorted(all_nodes)
 
@@ -103,16 +119,17 @@ class NETSCAPETrial(metaclass=ABCMeta):
         self._idx_to_node_id = {i: x for i,
                                 x in enumerate(self._all_nodes_list)}
 
-        feature_mx = self._get_feature_matrix(graphs)
+        labels = self._get_labels(all_features)
+        graph_features = self._get_features(all_features)
 
-        return graphs, labels, feature_mx
+        return graphs, labels, graph_features
 
     def run_trial(self):
         print(self._params)
         learned_label = self._params["learned_label"]
-        graphs, labels, feature_mx = self.load_input()
+        graphs, labels, graph_features = self.load_input()
         # GPU memory limited, using only subset of time steps
-        graphs, labels = self._cut_graphs_list(graphs, labels)
+        graphs, labels, graph_features = self._cut_graphs_list(graphs, labels, graph_features)
         train, test, validation = NETSCAPETrial.train_test_split(
             graphs, train_ratio=0.7)
 
@@ -137,7 +154,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         graph_data.load_data(
             graphs,
-            feature_mx,
+            graph_features,
             user_node_id_to_idx=self._node_id_to_idx,
             user_idx_to_node_id=self._idx_to_node_id,
             learned_label=learned_label,
@@ -244,34 +261,37 @@ class NETSCAPETrial(metaclass=ABCMeta):
     def _cut_graphs_list(self, graphs_before_cut, labels_before_cut):
         pass
 
-    def _get_feature_matrix(self, graphs):
-        # Must be called after self._node_id_to_idx and self._idx_to_node_id are set!
-        # features_meta = {
-        #     "attractor_basin": FeatureMeta(AttractorBasinCalculator, {"ab"}),  # Directed
-        #     "average_neighbor_degree": FeatureMeta(AverageNeighborDegreeCalculator, {"avg_nd"}),  # Any
-        #     "bfs_moments": FeatureMeta(BfsMomentsCalculator, {"bfs"}),  # Any
-        #     "communicability_betweenness_centrality": FeatureMeta(CommunicabilityBetweennessCentralityCalculator,
-        #                                                           {"communicability"}),  # Undirected
-        #     "eccentricity": FeatureMeta(EccentricityCalculator, {"ecc"}),  # Any
-        #     "fiedler_vector": FeatureMeta(FiedlerVectorCalculator, {"fv"}),  # Undirected (due to a code limitation)
-        #     "flow": FeatureMeta(FlowCalculator, {}),  # Directed
-        #     "hierarchy_energy": FeatureMeta(HierarchyEnergyCalculator, {"hierarchy"}),  # Directed (but works for any)
-        #     "louvain": FeatureMeta(LouvainCalculator, {"lov"}),  # Undirected
-        #     "motif3": FeatureMeta(nth_nodes_motif(3), {"m3"}),  # Any
-        #     "motif4": FeatureMeta(nth_nodes_motif(4), {"m4"}),  # Any
-        # }
-        # all_features_list = []
-        # for g in graphs:
-        #     new_g = nx.Graph.copy(g)
-        #     new_g.add_nodes_from(self._all_nodes_list)
-        #     features = GraphFeatures(new_g, features_meta, self._default_out_dir)
-        #     features.build()
-        #     features_to_add = {}
-        #     for k in features_meta.keys():
-        #         if features[k].is_relevant():
-        #             features_to_add[k] = features[k].features
-        #     all_features_list.append(features_to_add)
-        return torch.eye(len(self._all_nodes_list))
+    def _get_labels(self, all_features):
+        return [{k: all_feature[k] for k in self._default_features_meta.keys()} for all_feature in all_features]
+
+    def _get_features(self, all_features):
+        if self._directed:
+            return self._get_directed_features(all_features)
+        else:
+            return self._get_undirected_features(all_features)
+
+    def _get_undirected_features(self, all_features):
+        ret_features = []
+        for time_step_features in all_features:
+            flattened_feature_dict = {}
+            for feature, lengths in self._undirected_features_names_to_lengths.items():
+                # make sure all features are stored in an iterable fashion
+                if isinstance(lengths, int):
+                    if lengths == 1:
+                        flattened_feature_dict[feature] = time_step_features[feature]
+                    else:
+                        for i in range(lengths):
+                            new_feature = feature + f"_{i}"
+                            flattened_feature_dict[new_feature] = {node: time_step_features[feature][node][i] for node in time_step_features[feature].keys()}
+                else: # One special case of bfs_moments
+                    for i in range(lengths[1]):
+                        new_feature = feature + f"_{i}"
+                        flattened_feature_dict[new_feature] = {node: time_step_features[feature][node][0][i] for node in time_step_features[feature].keys()}
+            ret_features.append(flattened_feature_dict)
+        return ret_features
+
+    def _get_directed_features(self, all_features):
+        raise NotImplementedError
 
     def run_one_test_iteration(self, params):
 
@@ -394,7 +414,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         self._params.update({k: v for k, v in vars(args).items() if v is not None and (
             k == "data_folder_name" or k == "data_name")})
-        
+
         if args.seed is not None:
             self._set_seed(args.seed)
 
