@@ -3,6 +3,7 @@ import argparse
 import pandas as pd
 from scipy import stats
 import os
+from utils.general.str2bool import str2bool
 
 from scipy.stats.stats import ttest_rel
 
@@ -44,10 +45,14 @@ def prepare_file_df(root, file_name, check_if_model_wins=True):
     measure = file_name.split("_")[0]
     df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
     statistics = {}
-    statistics["accuracy_0"] = get_statistics(df.loc["model_accuracy_0"], df.loc["zero_model_tot_accuracy_0"], alternative=acc_alternative)
-    statistics["correlation_0"] = get_statistics(df.loc["model_correlation_0"], df.loc["zero_model_tot_correlation_0"], alternative=corr_alternative)
-    statistics["mae_0"] = get_statistics(df.loc["model_mae_0"], df.loc["zero_model_tot_mae_0"], alternative=mae_alternative)
-    df = df.loc[[ item for sublist in [[f"model_{k}", f"zero_model_tot_{k}"] for k in statistics.keys()] for item in sublist]]
+    statistics["accuracy_0"] = get_statistics(
+        df.loc["model_accuracy_0"], df.loc["zero_model_tot_accuracy_0"], alternative=acc_alternative)
+    statistics["correlation_0"] = get_statistics(
+        df.loc["model_correlation_0"], df.loc["zero_model_tot_correlation_0"], alternative=corr_alternative)
+    statistics["mae_0"] = get_statistics(
+        df.loc["model_mae_0"], df.loc["zero_model_tot_mae_0"], alternative=mae_alternative)
+    df = df.loc[[item for sublist in [
+        [f"model_{k}", f"zero_model_tot_{k}"] for k in statistics.keys()] for item in sublist]]
     for k, v in statistics.items():
         df.at[f"model_{k}", "one_sided_paired_t_value"] = v[0]
         df.at[f"model_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
@@ -60,6 +65,7 @@ def prepare_file_df(root, file_name, check_if_model_wins=True):
     df["measure"] = measure
     df["dataset"] = file_name
     return df
+
 
 def analyze_GCNRNN_files_in_outdir(
     out_files_dir: str = r"C:\Users\nothi\Google Drive\Studies\Courses\Thesis\from_dsi\success_prediction\out",
@@ -77,24 +83,17 @@ def analyze_GCNRNN_files_in_outdir(
         master_df.to_csv(out_file)
 
 
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-
 def main():
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('output_file_name', type=str, help="path to output file")
-    argparser.add_argument('folder_to_iterate', type=str, help="path to folder to recurse and parse")
-    argparser.add_argument('check_if_model_wins', type=str2bool, help="Decide whether to check if model wins or to check if it loses")
+    argparser.add_argument('output_file_name', type=str,
+                           help="path to output file")
+    argparser.add_argument('folder_to_iterate', type=str,
+                           help="path to folder to recurse and parse")
+    argparser.add_argument('check_if_model_wins', type=bool,
+                           help="Decide whether to check if model wins or to check if it loses", nargs='?', default=False, const=True)
     args = argparser.parse_args()
-    analyze_GCNRNN_files_in_outdir(args.folder_to_iterate, args.output_file_name, args.check_if_model_wins)
+    analyze_GCNRNN_files_in_outdir(
+        args.folder_to_iterate, args.output_file_name, args.check_if_model_wins)
 
 
 if __name__ == '__main__':

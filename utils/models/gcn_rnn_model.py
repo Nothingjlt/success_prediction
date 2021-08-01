@@ -31,6 +31,7 @@ class GCNRNNModel(NETSCAPEModel):
     ):
         metric = None
         if should_evaluate:
+            # Summing evaluation_set_current_labels and val_output since learn_diffs is set to True in this model
             metric = secondary_metric(
                 evaluation_set_current_labels + val_output, evaluation_set_next_labels)
 
