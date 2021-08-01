@@ -1,0 +1,5 @@
+docker run -it --rm --gpus device=7 -v /home/dsi/racheli/Roy/graph-measures/:/home/dsi/racheli/Roy/graph-measures/ roye:01 bash
+cd /home/dsi/racheli/Roy/graph-measures/
+
+cd /home/dsi/racheli/dockerfile
+docker build -t roye:01 .
