@@ -56,10 +56,11 @@ def get_graph_features_from_features_meta(
                     ).items()
                 }
             else:
-                print(graph_features[k].features,
-                      type(
-                          graph_features[k].features
-                )
+                print(
+                    graph_features[k].features,
+                    type(
+                        graph_features[k].features
+                    )
                 )
                 assert False
     return features_to_add
@@ -121,16 +122,22 @@ def get_measures_from_graphs(
     else:
         all_features_acc = None
     if skip_communicability_betweenness_centrality:
-        print(f'popping {COMMUNICABILITY_BETWEENNESS_CENTRALITY} from all_features_acc and all_features_non_acc')
+        print(
+            f'popping {COMMUNICABILITY_BETWEENNESS_CENTRALITY} from all_features_acc and all_features_non_acc'
+        )
         if all_features_acc is not None:
             all_features_acc.pop(COMMUNICABILITY_BETWEENNESS_CENTRALITY, None)
         all_features_non_acc.pop(COMMUNICABILITY_BETWEENNESS_CENTRALITY, None)
     if skip_all_pairs_shortest_path:
-        print(f'popping {ALL_PAIRS_SHORTEST_PATH} from all_features_acc and all_features_non_acc')
+        print(
+            f'popping {ALL_PAIRS_SHORTEST_PATH} from all_features_acc and all_features_non_acc'
+        )
         if all_features_acc is not None:
             all_features_acc.pop(ALL_PAIRS_SHORTEST_PATH, None)
         all_features_non_acc.pop(ALL_PAIRS_SHORTEST_PATH, None)
-        print(f'popping {ALL_PAIRS_SHORTEST_PATH_LENGTH} from all_features_acc and all_features_non_acc')
+        print(
+            f'popping {ALL_PAIRS_SHORTEST_PATH_LENGTH} from all_features_acc and all_features_non_acc'
+        )
         if all_features_acc is not None:
             all_features_acc.pop(ALL_PAIRS_SHORTEST_PATH_LENGTH, None)
         all_features_non_acc.pop(ALL_PAIRS_SHORTEST_PATH_LENGTH, None)
@@ -144,6 +151,17 @@ def get_measures_from_graphs(
     return node_level_features
 
 
+def update_graphs(graphs):
+    all_nodes_set = set()
+    for g in graphs:
+        all_nodes_set.update(g.nodes())
+
+    for g in graphs:
+        g.add_nodes_from(all_nodes_set)
+
+    return graphs
+
+
 def load_input(parameters: dict):
     print(parameters)
     input_fn = "./Pickles/" + \
@@ -154,14 +172,17 @@ def load_input(parameters: dict):
         parameters["data_name"] + "_with_features" + ".pkl"
     graphs = pickle.load(open(input_fn, "rb"))
     print(len(graphs))
+    print("updating graphs")
+    updated_graphs = update_graphs(graphs)
     node_level_features = get_measures_from_graphs(
-        graphs,
+        updated_graphs,
         no_acc=parameters['no_acc'],
-        skip_communicability_betweenness_centrality=parameters["skip_communicability_betweenness_centrality"],
+        skip_communicability_betweenness_centrality=parameters[
+            "skip_communicability_betweenness_centrality"],
         skip_all_pairs_shortest_path=parameters["skip_all_pairs_shortest_path"]
     )
-    print("dumping graphs with lables")
-    pickle.dump((graphs, node_level_features), open(output_fn, "wb"))
+    print("dumping updated graphs with features")
+    pickle.dump((updated_graphs, node_level_features), open(output_fn, "wb"))
 
 
 def prepare_params(params):
