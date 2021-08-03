@@ -120,10 +120,9 @@ class GraphSeriesData():
         self._validation_idx = [self._node_id_to_idx[node]
                                 for node in validation]
 
-    def _get_values_by_indices(self, values, key, indices, default_dict_value=0):
+    def _get_values_by_indices(self, values, key, indices):
         ret_values = torch.tensor(
-            [values[key].get(self._idx_to_node_id[i], default_dict_value)
-             for i in indices],
+            [values[key][self._idx_to_node_id[i]] for i in indices],
             dtype=torch.float,
             device=self._device,
         )
@@ -145,8 +144,7 @@ class GraphSeriesData():
                 new_features = self._get_values_by_indices(
                     time_step_features,
                     key,
-                    indices,
-                    default_dict_value=0
+                    indices
                 )
                 all_features = torch.cat(
                     (
