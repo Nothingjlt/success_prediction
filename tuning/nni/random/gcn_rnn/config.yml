@@ -1,0 +1,19 @@
+experimentName: test gcn rnn params using random search
+searchSpaceFile: search_space.json
+trialCommand: bash -lci "conda activate dsi_success_prediction && python run_gcn_rnn_trial.py --nni --seed 1 --data-folder-name reality_mining --data-name reality_mining_daily"
+trialCodeDirectory: ../../../..
+trialConcurrency: 10
+trialGpuNumber: 1
+maxExperimentDuration: 24h
+nniManagerIp: 192.168.2.16
+tuner:
+  name: Random
+trainingService:
+  platform: remote
+  machineList:
+    - host: 192.168.2.16
+      user: assaf
+      ssh_key_file: "~/.ssh/id_rsa"
+    - host: 192.168.2.17
+      user: assaf
+      ssh_key_file: "~/.ssh/id_rsa"
