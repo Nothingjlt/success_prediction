@@ -1,0 +1,93 @@
+{
+    "number_of_iterations_per_test": {
+        "_type": "choice",
+        "_value": [
+            1
+        ]
+    },
+    "graphs_cutoff_number": {
+        "_type": "randint",
+        "_value": [
+            2,
+            40
+        ]
+    },
+    "l1_lambda": {
+        "_type": "loguniform",
+        "_value": [
+            0.00001,
+            0.00000000000000000001
+        ]
+    },
+    "epochs": {
+        "_type": "quniform",
+        "_value": [
+            500,
+            5000,
+            500
+        ]
+    },
+    "gcn_dropout_rate": {
+        "_type": "uniform",
+        "_value": [
+            0,
+            1
+        ]
+    },
+    "lstm_dropout_rate": {
+        "_type": "uniform",
+        "_value": [
+            0,
+            1
+        ]
+    },
+    "gcn_hidden_sizes": {
+        "_type": "choice",
+        "_value": [
+            "[10,10]",
+            "[30,30]",
+            "[100,100]",
+            "[10, 10, 10, 10, 10, 10, 10, 10, 10]"
+        ]
+    },
+    "learning_rate": {
+        "_type": "loguniform",
+        "_value": [
+            0.1,
+            0.000001
+        ]
+    },
+    "weight_decay": {
+        "_type": "loguniform",
+        "_value": [
+            0.00001,
+            0.9
+        ]
+    },
+    "gcn_latent_dim": {
+        "_type": "choice",
+        "_value": [
+            5,
+            10,
+            30,
+            50,
+            100
+        ]
+    },
+    "lstm_hidden_size": {
+        "_type": "choice",
+        "_value": [
+            10,
+            30,
+            50,
+            100
+        ]
+    },
+    "lstm_num_layers": {
+        "_type": "randint",
+        "_value": [
+            1,
+            5
+        ]
+    }
+}

@@ -427,11 +427,15 @@ class NETSCAPETrial(metaclass=ABCMeta):
     def set_learned_label(self, learned_label):
         self._params["learned_label"] = learned_label
 
-    def run_full_trial(self):
+    def run_full_trial(self, label_to_learn=None):
         self.prepare_params()
 
-        for learned_label in self._default_features_meta.keys():
-            self.set_learned_label(learned_label)
+        if label_to_learn is None:
+            for learned_label in self._default_features_meta.keys():
+                self.set_learned_label(learned_label)
+                self.iterate_test()
+        else:
+            self.set_learned_label(label_to_learn)
             self.iterate_test()
 
 
