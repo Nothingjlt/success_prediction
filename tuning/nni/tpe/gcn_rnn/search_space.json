@@ -1,10 +1,4 @@
 {
-    "number_of_iterations_per_test": {
-        "_type": "choice",
-        "_value": [
-            1
-        ]
-    },
     "graphs_cutoff_number": {
         "_type": "randint",
         "_value": [
@@ -15,8 +9,8 @@
     "l1_lambda": {
         "_type": "loguniform",
         "_value": [
-            0.00001,
-            0.00000000000000000001
+            0.00000000000000000001,
+            0.00001
         ]
     },
     "epochs": {
@@ -53,8 +47,8 @@
     "learning_rate": {
         "_type": "loguniform",
         "_value": [
-            0.1,
-            0.000001
+            0.000001,
+            0.1
         ]
     },
     "weight_decay": {

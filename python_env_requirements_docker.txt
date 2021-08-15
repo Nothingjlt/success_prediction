@@ -1,4 +1,4 @@
 
 
-bitstring
-nni
+bitstring==3.1.7
+nni==2.3
