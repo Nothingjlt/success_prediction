@@ -4,6 +4,8 @@ import torch
 import pickle
 import numpy as np
 import pandas as pd
+import os
+import errno
 from lib.graph_measures.features_meta.features_meta import *
 from lib.graph_measures.features_infra.graph_features import GraphFeatures
 from utils.utils import GraphSeriesData
@@ -109,7 +111,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         all_nodes = set()
         for g in graphs:
             all_nodes.update(g.nodes())
-        
+
         self._directed = g.is_directed()
 
         self._all_nodes_list = sorted(all_nodes)
@@ -129,7 +131,8 @@ class NETSCAPETrial(metaclass=ABCMeta):
         learned_label = self._params["learned_label"]
         graphs, labels, graph_features = self.load_input()
         # GPU memory limited, using only subset of time steps
-        graphs, labels, graph_features = self._cut_graphs_list(graphs, labels, graph_features)
+        graphs, labels, graph_features = self._cut_graphs_list(
+            graphs, labels, graph_features)
         train, test, validation = NETSCAPETrial.train_test_split(
             graphs, train_ratio=0.7)
 
@@ -282,11 +285,13 @@ class NETSCAPETrial(metaclass=ABCMeta):
                     else:
                         for i in range(lengths):
                             new_feature = feature + f"_{i}"
-                            flattened_feature_dict[new_feature] = {node: time_step_features[feature][node][i] for node in time_step_features[feature].keys()}
-                else: # One special case of bfs_moments
+                            flattened_feature_dict[new_feature] = {
+                                node: time_step_features[feature][node][i] for node in time_step_features[feature].keys()}
+                else:  # One special case of bfs_moments
                     for i in range(lengths[1]):
                         new_feature = feature + f"_{i}"
-                        flattened_feature_dict[new_feature] = {node: time_step_features[feature][node][0][i] for node in time_step_features[feature].keys()}
+                        flattened_feature_dict[new_feature] = {
+                            node: time_step_features[feature][node][0][i] for node in time_step_features[feature].keys()}
             ret_features.append(flattened_feature_dict)
         return ret_features
 
@@ -366,7 +371,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
             "_".join([self._params["learned_label"],
                       self._params["data_name"], self._get_trial_name()]) + ".out"
         logger = TrialSummary(output_file_name)
-        for i in range(self._params["number_of_iterations_per_test"]):
+        for i in range(self._params["num_iterations"]):
             results.append(self.results_type(
                 *self.run_one_test_iteration(self._params)))
         print('-'*100)
@@ -388,10 +393,34 @@ class NETSCAPETrial(metaclass=ABCMeta):
         self._argparser.add_argument("--nni", action='store_true')
         self._argparser.add_argument("--seed", type=int,
                                      help="Optional random seed for run")
-        self._argparser.add_argument("--data-folder-name", type=str,
+        self._argparser.add_argument("--data-folder-name", type=str, default="reality_mining",
                                      help="Folder name for dataset to evaluate")
-        self._argparser.add_argument("--data-name", type=str,
+        self._argparser.add_argument("--data-name", type=str, default="reality_mining_daily",
                                      help="Data pickle file name, without the .pkl extention")
+        self._argparser.add_argument("--num-iterations", type=int, default=30,
+                                     help="Number of iterations per test")
+        self._argparser.add_argument("--print-every-num-of-epochs", type=int, default=100,
+                                     help="Number of epochs between summary prints")
+        self._argparser.add_argument("--log-guard-scale", type=float, default=10,
+                                     help="Scale of log guard, used to guard against taking log of 0")
+        self._argparser.add_argument("--l1-lambda", type=float, default=0,
+                                     help="L1 norm regularization weight")
+        self._argparser.add_argument("--epochs", type=int, default=500,
+                                     help="Number of epochs to learn")
+        self._argparser.add_argument("--learning-rate", type=float, default=0.001,
+                                     help="Learning rate for network")
+        self._argparser.add_argument("--weight-decay", type=float, default=0,
+                                     help="Weight decay regularization")
+        self._argparser.add_argument("--learned-label", type=str, default="betweenness_centrality", choices=self._default_features_meta.keys(),
+                                     help="Type of label to learn")
+
+    def _update_general_parser_arguments(self, args):
+        self._params.update(vars(args))
+
+        if args.seed is not None:
+            self._set_seed(args.seed)
+
+        self._nni = args.nni
 
     @abstractmethod
     def _add_specific_parser_arguments(self):
@@ -412,14 +441,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         args = self._argparser.parse_args()
 
-        self._params.update({k: v for k, v in vars(args).items() if v is not None and (
-            k == "data_folder_name" or k == "data_name")})
-
-        if args.seed is not None:
-            self._set_seed(args.seed)
-
-        self._nni = args.nni
-
+        self._update_general_parser_arguments(args)
         self._update_specific_parser_arguments(args)
 
         return
@@ -450,5 +472,12 @@ class TrialSummary:
                 for single_result_index, single_result in enumerate(result_list):
                     df.at[result_type+f"_{single_result_index}",
                           single_test_result_index] = single_result
+        filename = "/foo/bar/baz.txt"
+        if not os.path.exists(os.path.dirname(self._output_file_name)):
+            try:
+                os.makedirs(os.path.dirname(self._output_file_name))
+            except OSError as exc:  # Guard against race condition
+                if exc.errno != errno.EEXIST:
+                    raise
         with open(self._output_file_name, 'w') as output_file:
             df.to_csv(output_file, sep=",")
