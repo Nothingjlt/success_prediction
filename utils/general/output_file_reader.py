@@ -3,9 +3,6 @@ import argparse
 import pandas as pd
 from scipy import stats
 import os
-from utils.general.str2bool import str2bool
-
-from scipy.stats.stats import ttest_rel
 
 ACC_REGEX = "Final result: model tot accuracy: \[(?P<model_tot_acc>.*?)\], zero_model_tot_accuracy: \[(?P<zero_model_tot_acc>.*?)\], first order tot accuracy: \[(?P<first_order_model_tot_acc>.*?)\], zero model diff accuracy: \[(?P<zero_model_diff_acc>.*?)\], first order diff accuracy: \[(?P<first_order_model_diff_acc>.*?)\]"
 COR_REGEX = "Final result: model tot correlation: \[(?P<model_tot_acc>.*?)\], zero_model_tot_correlation: \[(?P<zero_model_tot_acc>.*?)\], first order tot correlation: \[(?P<first_order_model_tot_acc>.*?)\], zero model diff correlation: \[(?P<zero_model_diff_acc>.*?)\], first order diff correlation: \[(?P<first_order_model_diff_acc>.*?)\]"
@@ -33,6 +30,16 @@ def get_statistics(x, y, alternative):
     return ttest.statistic, ttest.pvalue, wil.statistic, wil.pvalue
 
 
+def get_latest_model_index(df):
+    latest_index = 0
+    for row in df.index.values:
+        if "zero_model_tot_accuracy_" in row:
+            num = int(row[len("zero_model_tot_accuracy_"):])
+            if num > latest_index:
+                latest_index = num
+    return latest_index
+
+
 def prepare_file_df(root, file_name, check_if_model_wins=True):
     if check_if_model_wins:
         acc_alternative = "greater"
@@ -44,24 +51,26 @@ def prepare_file_df(root, file_name, check_if_model_wins=True):
         mae_alternative = "greater"
     measure = file_name.split("_")[0]
     df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
+    models_index = get_latest_model_index(df)
     statistics = {}
     statistics["accuracy_0"] = get_statistics(
-        df.loc["model_accuracy_0"], df.loc["zero_model_tot_accuracy_0"], alternative=acc_alternative)
+        df.loc["model_accuracy_0"], df.loc[f"zero_model_tot_accuracy_{models_index}"], alternative=acc_alternative)
     statistics["correlation_0"] = get_statistics(
-        df.loc["model_correlation_0"], df.loc["zero_model_tot_correlation_0"], alternative=corr_alternative)
+        df.loc["model_correlation_0"], df.loc[f"zero_model_tot_correlation_{models_index}"], alternative=corr_alternative)
     statistics["mae_0"] = get_statistics(
-        df.loc["model_mae_0"], df.loc["zero_model_tot_mae_0"], alternative=mae_alternative)
+        df.loc["model_mae_0"], df.loc[f"zero_model_tot_mae_{models_index}"], alternative=mae_alternative)
     df = df.loc[[item for sublist in [
-        [f"model_{k}", f"zero_model_tot_{k}"] for k in statistics.keys()] for item in sublist]]
+        [f"model_{k}", f"zero_model_tot_{k[:-1] + str(models_index)}"] for k in statistics.keys()] for item in sublist]]
     for k, v in statistics.items():
+        zero_model_index = k.replace('_0', f"_{models_index}")
         df.at[f"model_{k}", "one_sided_paired_t_value"] = v[0]
         df.at[f"model_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
         df.at[f"model_{k}", "wilcoxon_statistic"] = v[2]
         df.at[f"model_{k}", "wilcoxon_pvalue"] = v[3]
-        df.at[f"zero_model_tot_{k}", "one_sided_paired_t_value"] = v[0]
-        df.at[f"zero_model_tot_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
-        df.at[f"zero_model_tot_{k}", "wilcoxon_statistic"] = v[2]
-        df.at[f"zero_model_tot_{k}", "wilcoxon_pvalue"] = v[3]
+        df.at[f"zero_model_tot_{zero_model_index}", "one_sided_paired_t_value"] = v[0]
+        df.at[f"zero_model_tot_{zero_model_index}", "one_sided_paired_t_test_pvalue"] = v[1]
+        df.at[f"zero_model_tot_{zero_model_index}", "wilcoxon_statistic"] = v[2]
+        df.at[f"zero_model_tot_{zero_model_index}", "wilcoxon_pvalue"] = v[3]
     df["measure"] = measure
     df["dataset"] = file_name
     return df
@@ -80,7 +89,7 @@ def analyze_GCNRNN_files_in_outdir(
                 master_df = pd.concat([master_df, df])
     print(master_df)
     with open(output_file_name, 'w') as out_file:
-        master_df.to_csv(out_file)
+        out_file.write(master_df.to_csv(sep=",").replace('\r\n', '\n'))
 
 
 def main():
