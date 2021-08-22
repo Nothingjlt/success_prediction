@@ -54,23 +54,56 @@ def prepare_file_df(root, file_name, check_if_model_wins=True):
     models_index = get_latest_model_index(df)
     statistics = {}
     statistics["accuracy_0"] = get_statistics(
-        df.loc["model_accuracy_0"], df.loc[f"zero_model_tot_accuracy_{models_index}"], alternative=acc_alternative)
+        df.loc["model_accuracy_0"],
+        df.loc[f"zero_model_tot_accuracy_{models_index}"],
+        alternative=acc_alternative
+    )
     statistics["correlation_0"] = get_statistics(
-        df.loc["model_correlation_0"], df.loc[f"zero_model_tot_correlation_{models_index}"], alternative=corr_alternative)
+        df.loc["model_correlation_0"],
+        df.loc[f"zero_model_tot_correlation_{models_index}"],
+        alternative=corr_alternative
+    )
     statistics["mae_0"] = get_statistics(
-        df.loc["model_mae_0"], df.loc[f"zero_model_tot_mae_{models_index}"], alternative=mae_alternative)
+        df.loc["model_mae_0"],
+        df.loc[f"zero_model_tot_mae_{models_index}"],
+        alternative=mae_alternative
+    )
     df = df.loc[[item for sublist in [
         [f"model_{k}", f"zero_model_tot_{k[:-1] + str(models_index)}"] for k in statistics.keys()] for item in sublist]]
     for k, v in statistics.items():
         zero_model_index = k.replace('_0', f"_{models_index}")
-        df.at[f"model_{k}", "one_sided_paired_t_value"] = v[0]
-        df.at[f"model_{k}", "one_sided_paired_t_test_pvalue"] = v[1]
-        df.at[f"model_{k}", "wilcoxon_statistic"] = v[2]
-        df.at[f"model_{k}", "wilcoxon_pvalue"] = v[3]
-        df.at[f"zero_model_tot_{zero_model_index}", "one_sided_paired_t_value"] = v[0]
-        df.at[f"zero_model_tot_{zero_model_index}", "one_sided_paired_t_test_pvalue"] = v[1]
-        df.at[f"zero_model_tot_{zero_model_index}", "wilcoxon_statistic"] = v[2]
-        df.at[f"zero_model_tot_{zero_model_index}", "wilcoxon_pvalue"] = v[3]
+        df.at[
+            f"model_{k}",
+            "one_sided_paired_t_value"
+        ] = v[0]
+        df.at[
+            f"model_{k}",
+            "one_sided_paired_t_test_pvalue"
+        ] = v[1]
+        df.at[
+            f"model_{k}",
+            "wilcoxon_statistic"
+        ] = v[2]
+        df.at[
+            f"model_{k}",
+            "wilcoxon_pvalue"
+        ] = v[3]
+        df.at[
+            f"zero_model_tot_{zero_model_index}",
+            "one_sided_paired_t_value"
+        ] = v[0]
+        df.at[
+            f"zero_model_tot_{zero_model_index}",
+            "one_sided_paired_t_test_pvalue"
+        ] = v[1]
+        df.at[
+            f"zero_model_tot_{zero_model_index}",
+            "wilcoxon_statistic"
+        ] = v[2]
+        df.at[
+            f"zero_model_tot_{zero_model_index}",
+            "wilcoxon_pvalue"
+        ] = v[3]
     df["measure"] = measure
     df["dataset"] = file_name
     return df
