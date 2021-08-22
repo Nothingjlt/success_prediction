@@ -1,5 +1,3 @@
-import networkx as nx
-from numpy.lib.arraysetops import isin
 import torch
 import pickle
 import numpy as np
@@ -7,14 +5,12 @@ import pandas as pd
 import os
 import errno
 from lib.graph_measures.features_meta.features_meta import *
-from lib.graph_measures.features_infra.graph_features import GraphFeatures
 from utils.utils import GraphSeriesData
 from abc import ABCMeta, abstractmethod
 from collections import namedtuple
 
 import argparse
 
-import ast
 import nni
 
 
@@ -25,6 +21,9 @@ class NETSCAPETrial(metaclass=ABCMeta):
             "model_accuracy",
             "model_correlation",
             "model_mae",
+            "model_train_accuracy",
+            "model_train_correlation",
+            "model_train_mae",
             "zero_model_tot_accuracy",
             "zero_model_tot_correlation",
             "zero_model_tot_mae",
@@ -40,7 +39,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         ]
     )
 
-    def __init__(self, parameters, seed=None):
+    def __init__(self, parameters: dict = {}, seed: int = None, out_folder: str = "out"):
         seed_to_set = np.random.randint(0, 2 ^ 32) if seed is None else seed
         self._set_seed(seed_to_set)
         self._params = parameters
@@ -54,6 +53,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
             "page_rank": FeatureMeta(PageRankCalculator, {"page"}),
             "general": FeatureMeta(GeneralCalculator, {"gen"}),
         }
+        self._all_labels_together = "all_labels"
         self._undirected_features_names_to_lengths = {
             'average_neighbor_degree': 1,
             'eccentricity': 1,
@@ -68,8 +68,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
             'bfs_moments': [1, 2]
         }
 
-        self._default_label_to_learn = "kcore"
-        self._default_out_dir = "out"
+        self._default_out_dir = out_folder
         self._nni = False
         self._device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu")
@@ -93,21 +92,26 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         print("# of nodes that appear at all timestamps", len(all_intersection))
         val_test_inds = np.random.choice(
-            all_intersection, round(len(all_intersection) * (1-train_ratio)), replace=False
+            all_intersection,
+            round(
+                len(all_intersection) * (1-train_ratio)
+            ),
+            replace=False
         )
         test, validation = np.array_split(val_test_inds, 2)
         train = np.setdiff1d(np.array(all_intersection), val_test_inds)
         e = 0
         return train, test, validation
 
+    def _get_inupt_pickle_file_name(self):
+        input_pickle_file_name = "./Pickles/" + str(self._params["data_folder_name"]) + \
+            "/" + self._params["data_name"] + \
+            "_with_features" + ".pkl"
+        return input_pickle_file_name
+
     def load_input(self):
-        graphs, all_features = pickle.load(
-            open(
-                "./Pickles/" + str(self._params["data_folder_name"]) +
-                "/" + self._params["data_name"] +
-                "_with_features" + ".pkl", "rb"
-            )
-        )
+        input_pickle_file_name = self._get_inupt_pickle_file_name()
+        graphs, all_features = pickle.load(open(input_pickle_file_name, "rb"))
         all_nodes = set()
         for g in graphs:
             all_nodes.update(g.nodes())
@@ -116,10 +120,14 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         self._all_nodes_list = sorted(all_nodes)
 
-        self._node_id_to_idx = {x: i for i,
-                                x in enumerate(self._all_nodes_list)}
-        self._idx_to_node_id = {i: x for i,
-                                x in enumerate(self._all_nodes_list)}
+        self._node_id_to_idx = {
+            x: i for i,
+            x in enumerate(self._all_nodes_list)
+        }
+        self._idx_to_node_id = {
+            i: x for i,
+            x in enumerate(self._all_nodes_list)
+        }
 
         labels = self._get_labels(all_features)
         graph_features = self._get_features(all_features)
@@ -140,6 +148,10 @@ class NETSCAPETrial(metaclass=ABCMeta):
         model_accuracy_list = []
         model_correlation_list = []
         model_mae_list = []
+        model_train_loss_list = []
+        model_train_accuracy_list = []
+        model_train_correlation_list = []
+        model_train_mae_list = []
         zero_model_tot_loss_list = []
         zero_model_tot_accuracy_list = []
         zero_model_tot_mae_list = []
@@ -178,6 +190,12 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 test_correlation,
                 test_mae
             ) = model.evaluate("test", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
+            (
+                train_loss,
+                train_accuracy,
+                train_correlation,
+                train_mae
+            ) = model.evaluate("train", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
 
             (
                 zero_model_tot_loss_list,
@@ -213,16 +231,35 @@ class NETSCAPETrial(metaclass=ABCMeta):
         model_correlation_list.append(test_correlation)
         model_mae_list.append(test_mae)
 
+        model_train_loss_list.append(train_loss)
+        model_train_accuracy_list.append(train_accuracy)
+        model_train_correlation_list.append(train_correlation)
+        model_train_mae_list.append(train_mae)
+
         print(
-            f"test loss: {np.mean([m.data.item() for m in model_loss_list]):.5f}, test_accuracy: {np.mean(model_accuracy_list):.5f}, test_correlation: {np.mean(model_correlation_list):.5f}, test_mae: {np.mean(model_mae_list):.5f}")
+            f"test loss: {np.mean([m.data.item() for m in model_loss_list]):.5f}, test accuracy: {np.mean(model_accuracy_list):.5f}, "
+            f"test correlation: {np.mean(model_correlation_list):.5f}, test_mae: {np.mean(model_mae_list):.5f}"
+        )
         print(
-            f"zero model loss: {np.mean([m.data.item() for m in zero_model_tot_loss_list]):.5f}, zero model accuracy: {np.mean(zero_model_tot_accuracy_list):.5f}, zero model correlation: {np.mean(zero_model_tot_correlation_list):.5f}, zero model mae: {np.mean(zero_model_tot_mae_list):.5f}")
+            f"train loss: {np.mean([m.data.item() for m in model_train_loss_list]):.5f}, train accuracy: {np.mean(model_train_accuracy_list):.5f}, "
+            f"train correlation: {np.mean(model_train_correlation_list):.5f}, train mae: {np.mean(model_train_mae_list):.5f}"
+        )
         print(
-            f"first order model loss: {np.mean([m.data.item() for m in first_order_tot_loss_list]):.5f}, first order model accuracy: {np.mean(first_order_tot_accuracy_list):.5f}, first order model correlation: {np.mean(first_order_tot_correlation_list):.5f}, first order model mae: {np.mean(first_order_tot_mae_list):.5f}")
+            f"zero model loss: {np.mean([m.data.item() for m in zero_model_tot_loss_list]):.5f}, zero model accuracy: {np.mean(zero_model_tot_accuracy_list):.5f}, "
+            f"zero model correlation: {np.mean(zero_model_tot_correlation_list):.5f}, zero model mae: {np.mean(zero_model_tot_mae_list):.5f}"
+        )
         print(
-            f"zero diff model loss: {np.mean([m.data.item() for m in zero_model_diff_loss_list]):.5f}, zero diff model accuracy: {np.mean(zero_model_diff_accuracy_list):.5f}, zero diff model correlation: {np.mean(zero_model_diff_correlation_list):.5f}, zero diff model mae: {np.mean(zero_model_diff_mae_list):.5f}")
+            f"first order model loss: {np.mean([m.data.item() for m in first_order_tot_loss_list]):.5f}, first order model accuracy: {np.mean(first_order_tot_accuracy_list):.5f}, "
+            f"first order model correlation: {np.mean(first_order_tot_correlation_list):.5f}, first order model mae: {np.mean(first_order_tot_mae_list):.5f}"
+        )
         print(
-            f"first order diff model loss: {np.mean([m.data.item() for m in first_order_diff_loss_list]):.5f}, first order diff model accuracy: {np.mean(first_order_diff_accuracy_list):.5f}, first order diff model correlation: {np.mean(first_order_diff_correlation_list):.5f}, first order diff model mae: {np.mean(first_order_diff_mae_list):.5f}")
+            f"zero diff model loss: {np.mean([m.data.item() for m in zero_model_diff_loss_list]):.5f}, zero diff model accuracy: {np.mean(zero_model_diff_accuracy_list):.5f}, "
+            f"zero diff model correlation: {np.mean(zero_model_diff_correlation_list):.5f}, zero diff model mae: {np.mean(zero_model_diff_mae_list):.5f}"
+        )
+        print(
+            f"first order diff model loss: {np.mean([m.data.item() for m in first_order_diff_loss_list]):.5f}, first order diff model accuracy: {np.mean(first_order_diff_accuracy_list):.5f}, "
+            f"first order diff model correlation: {np.mean(first_order_diff_correlation_list):.5f}, first order diff model mae: {np.mean(first_order_diff_mae_list):.5f}"
+        )
         print("\n")
 
         return (
@@ -230,6 +267,10 @@ class NETSCAPETrial(metaclass=ABCMeta):
             model_accuracy_list,
             model_correlation_list,
             model_mae_list,
+            [m.data.item() for m in model_train_loss_list],
+            model_train_accuracy_list,
+            model_train_correlation_list,
+            model_train_mae_list,
             [m.data.item() for m in zero_model_tot_loss_list],
             zero_model_tot_accuracy_list,
             zero_model_tot_correlation_list,
@@ -298,23 +339,17 @@ class NETSCAPETrial(metaclass=ABCMeta):
     def _get_directed_features(self, all_features):
         raise NotImplementedError
 
-    def run_one_test_iteration(self, params):
-
-        l1_lambda = [0, 1e-7]
-        epochs = [500]
-        gcn_dropout_rate = [0.3, 0.5]
-        gcn_hidden_sizes = [[100, 100], [200, 200]]
-        learning_rate = [1e-3, 1e-2, 3e-2]
-        weight_decay = [5e-2, 1e-2]
-        gcn_latent_dim = [50, 100]
-        lstm_hidden_size = [50, 100]
-        results = []
+    def run_one_test_iteration(self):
 
         (
             model_loss,
             model_accuracy,
             model_correlation,
             model_mae,
+            model_train_loss,
+            model_train_accuracy,
+            model_train_correlation,
+            model_train_mae,
             zero_model_tot_loss,
             zero_model_tot_accuracy,
             zero_model_tot_correlation,
@@ -339,17 +374,20 @@ class NETSCAPETrial(metaclass=ABCMeta):
         else:
             print(f"Final result (accruacy): model accuracy: {model_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
                   f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
-                  f"first order diff accuracy: {first_order_diff_accuracy}")
+                  f"first order diff accuracy: {first_order_diff_accuracy}, model train accuracy: {model_train_accuracy}")
             print(f"Final result (correlation): model correlation: {model_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
                   f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
-                  f"first order diff correlation: {first_order_diff_correlation}")
+                  f"first order diff correlation: {first_order_diff_correlation}, model train correlation: {model_train_correlation}")
             print(f"Final result (mae): model mae: {model_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
                   f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
-                  f"first order diff mae: {first_order_diff_mae}")
+                  f"first order diff mae: {first_order_diff_mae}, model train mae: {model_train_mae}")
         return (
             model_accuracy,
             model_correlation,
             model_mae,
+            model_train_accuracy,
+            model_train_correlation,
+            model_train_mae,
             zero_model_tot_accuracy,
             zero_model_tot_correlation,
             zero_model_tot_mae,
@@ -364,27 +402,30 @@ class NETSCAPETrial(metaclass=ABCMeta):
             first_order_diff_mae
         )
 
-    def iterate_test(self):
-        results = []
+    def _get_output_file_name(self):
         output_file_name = "./" + self._default_out_dir + "/" + \
             str(self._params["data_folder_name"]) + "/" + \
             "_".join([self._params["learned_label"],
                       self._params["data_name"], self._get_trial_name()]) + ".out"
+        return output_file_name
+
+    def iterate_test(self):
+        results = []
+        output_file_name = self._get_output_file_name()
         logger = TrialSummary(output_file_name)
         for i in range(self._params["num_iterations"]):
-            results.append(self.results_type(
-                *self.run_one_test_iteration(self._params)))
+            results.append(self.results_type(*self.run_one_test_iteration()))
         print('-'*100)
         for result in results:
-            output_string = "\n".join([f"Final result: model accuracy: {result.model_accuracy}, zero_model_tot_accuracy: {result.zero_model_tot_accuracy}, "
+            output_string = "\n".join([f"Final result: model accuracy: {result.model_accuracy}, zero model tot accuracy: {result.zero_model_tot_accuracy}, "
                                        f"first order tot accuracy: {result.first_order_tot_accuracy}, zero model diff accuracy: {result.zero_model_diff_accuracy}, "
-                                       f"first order diff accuracy: {result.first_order_diff_accuracy}",
-                                       f"Final result: model correlation: {result.model_correlation}, zero_model_tot_correlation: {result.zero_model_tot_correlation}, "
+                                       f"first order diff accuracy: {result.first_order_diff_accuracy}, model train accuracy: {result.model_train_accuracy},",
+                                       f"Final result: model correlation: {result.model_correlation}, zero model tot correlation: {result.zero_model_tot_correlation}, "
                                        f"first order tot correlation: {result.first_order_tot_correlation}, zero model diff correlation: {result.zero_model_diff_correlation}, "
-                                       f"first order diff correlation: {result.first_order_diff_correlation}",
-                                       f"Final result: model mae: {result.model_mae}, zero_model_tot_mae: {result.zero_model_tot_mae}, "
+                                       f"first order diff correlation: {result.first_order_diff_correlation}, model train correlation: {result.model_train_correlation}",
+                                       f"Final result: model mae: {result.model_mae}, zero model tot mae: {result.zero_model_tot_mae}, "
                                        f"first order tot mae: {result.first_order_tot_mae}, zero model diff mae: {result.zero_model_diff_mae}, "
-                                       f"first order diff mae: {result.first_order_diff_mae}"])
+                                       f"first order diff mae: {result.first_order_diff_mae}, model train mae: {result.model_train_mae}"])
             print(output_string)
         logger.write_output(results)
         return results
@@ -411,7 +452,9 @@ class NETSCAPETrial(metaclass=ABCMeta):
                                      help="Learning rate for network")
         self._argparser.add_argument("--weight-decay", type=float, default=0,
                                      help="Weight decay regularization")
-        self._argparser.add_argument("--learned-label", type=str, default="betweenness_centrality", choices=self._default_features_meta.keys(),
+        learned_labels_choices = set(self._default_features_meta.keys())
+        learned_labels_choices.add(self._all_labels_together)
+        self._argparser.add_argument("--learned-label", type=str, default="betweenness_centrality", choices=learned_labels_choices,
                                      help="Type of label to learn")
 
     def _update_general_parser_arguments(self, args):
@@ -452,7 +495,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
     def run_full_trial(self, label_to_learn=None):
         self.prepare_params()
 
-        if label_to_learn is None:
+        if label_to_learn is None or self._params['learned_label'] == self._all_labels_together:
             for learned_label in self._default_features_meta.keys():
                 self.set_learned_label(learned_label)
                 self.iterate_test()
@@ -470,9 +513,10 @@ class TrialSummary:
         for single_test_result_index, single_test_result in enumerate(results):
             for result_type, result_list in single_test_result._asdict().items():
                 for single_result_index, single_result in enumerate(result_list):
-                    df.at[result_type+f"_{single_result_index}",
-                          single_test_result_index] = single_result
-        filename = "/foo/bar/baz.txt"
+                    df.at[
+                        result_type+f"_{single_result_index}",
+                        single_test_result_index
+                    ] = single_result
         if not os.path.exists(os.path.dirname(self._output_file_name)):
             try:
                 os.makedirs(os.path.dirname(self._output_file_name))
@@ -480,4 +524,6 @@ class TrialSummary:
                 if exc.errno != errno.EEXIST:
                     raise
         with open(self._output_file_name, 'w') as output_file:
-            df.to_csv(output_file, sep=",")
+            output_file.write(df.to_csv(sep=",").replace('\r\n', '\n'))
+        with open(self._output_file_name, 'r') as output_file:
+            print(output_file.read())
