@@ -2,7 +2,7 @@ experimentName: test gcn rnn params using tpe tuner
 searchSpaceFile: search_space.json
 trialCommand: python run_gcn_rnn_trial.py --nni --seed 1 --data-folder-name reality_mining --data-name reality_mining_daily --num-iterations 1
 trialCodeDirectory: ../../../..
-trialConcurrency: 3
+trialConcurrency: 20
 trialGpuNumber: 1
 maxExperimentDuration: 24h
 tuner:
@@ -14,4 +14,4 @@ tuner:
 trainingService:
   platform: local
   useActiveGpu: True
-  maxTrialNumberPerGpu: 2
+  maxTrialNumberPerGpu: 5
