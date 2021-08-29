@@ -18,6 +18,9 @@ class GCNRNNTrial(NETSCAPETrial):
         return True
 
     def _cut_graphs_list(self, graphs_before_cut, labels_before_cut, features_before_cut):
+        number_of_graphs = len(graphs_before_cut)
+        if number_of_graphs < self._params["graphs_cutoff_number"]:
+            self._params["graphs_cutoff_number"] = number_of_graphs
         graphs_cutoff_number = self._params["graphs_cutoff_number"]
         return graphs_before_cut[-graphs_cutoff_number:], labels_before_cut[-graphs_cutoff_number:], features_before_cut[-graphs_cutoff_number:]
 
