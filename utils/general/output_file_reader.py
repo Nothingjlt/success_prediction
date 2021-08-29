@@ -45,7 +45,7 @@ def get_statistics(x, y, alternative, should_be_greater=False):
     x_avg = x.mean()
     y_avg = y.mean()
     perc_improvement = 100*(x_avg - y_avg)/abs(y_avg)
-    if should_be_greater == "less":
+    if should_be_greater:
         perc_improvement *= -1
     return STATISTICS_RESULTS(ttest.statistic, ttest.pvalue, wil.statistic, wil.pvalue, perc_improvement)
 
