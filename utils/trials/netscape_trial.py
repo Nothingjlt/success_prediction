@@ -67,6 +67,19 @@ class NETSCAPETrial(metaclass=ABCMeta):
             # actually a list of length 1 containing a tuple of length 2
             'bfs_moments': [1, 2]
         }
+        self._directed_features_names_to_lengths = {
+            # 'attractor_basin': 1, # attractor_basin can be nan for nodes with no in edges or no out edges
+            'average_neighbor_degree': 1,
+            'eccentricity': 1,
+            'flow': 1,
+            'motif3': 13,
+            'motif4': 199,
+            'eigenvector_centrality': 1,
+            'clustering_coefficient': 1,
+            'square_clustering_coefficient': 1,
+            # actually a list of length 1 containing a tuple of length 2
+            'bfs_moments': [1, 2]
+        }
 
         self._default_out_dir = out_folder
         self._nni = False
@@ -309,16 +322,11 @@ class NETSCAPETrial(metaclass=ABCMeta):
         return [{k: all_feature[k] for k in self._default_features_meta.keys()} for all_feature in all_features]
 
     def _get_features(self, all_features):
-        if self._directed:
-            return self._get_directed_features(all_features)
-        else:
-            return self._get_undirected_features(all_features)
-
-    def _get_undirected_features(self, all_features):
         ret_features = []
+        feautres_names_to_lengths = self._directed_features_names_to_lengths if self._directed else self._undirected_features_names_to_lengths
         for time_step_features in all_features:
             flattened_feature_dict = {}
-            for feature, lengths in self._undirected_features_names_to_lengths.items():
+            for feature, lengths in feautres_names_to_lengths.items():
                 # make sure all features are stored in an iterable fashion
                 if isinstance(lengths, int):
                     if lengths == 1:
@@ -335,9 +343,6 @@ class NETSCAPETrial(metaclass=ABCMeta):
                             node: time_step_features[feature][node][0][i] for node in time_step_features[feature].keys()}
             ret_features.append(flattened_feature_dict)
         return ret_features
-
-    def _get_directed_features(self, all_features):
-        raise NotImplementedError
 
     def run_one_test_iteration(self):
 
