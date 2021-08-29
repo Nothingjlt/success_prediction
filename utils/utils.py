@@ -88,6 +88,9 @@ class GraphSeriesData():
         self._validation_idx = [self._node_id_to_idx[node]
                                 for node in validation]
 
+        if self._learn_logs:
+            self._calc_log_eps(labels_list[-2:])
+
         self._train_next_time_labels = self._get_labels_by_indices(
             labels_list[-1], self._train_idx)
         self._train_current_labels = self._get_labels_by_indices(
@@ -119,6 +122,14 @@ class GraphSeriesData():
         self._test_idx = [self._node_id_to_idx[node] for node in test]
         self._validation_idx = [self._node_id_to_idx[node]
                                 for node in validation]
+    
+    def _calc_log_eps(self, labels_list):
+        all_indices = self._train_idx + self._test_idx + self._validation_idx
+        ll = list(map(lambda x: self._get_values_by_indices(x, self._learned_label, all_indices), labels_list))
+        assert(np.all([labels[labels>0].shape[0] != 0 for labels in ll]))
+        min_positive_label = np.min([labels[labels > 0].min() for labels in ll])
+        self._eps = min_positive_label/self._log_guard_scale
+        return
 
     def _get_values_by_indices(self, values, key, indices):
         ret_values = torch.tensor(
@@ -166,8 +177,7 @@ class GraphSeriesData():
             if ret_labels.dim() == 2:
                 ret_labels = ret_labels.sum(dim=1)
         if self._learn_logs:
-            eps = ret_labels[ret_labels > 0].min()/self._log_guard_scale
-            ret_labels = torch.log(ret_labels+eps)
+            ret_labels = torch.log(ret_labels+self._eps)
         return ret_labels
 
     @property
