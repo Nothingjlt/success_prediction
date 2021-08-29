@@ -2,7 +2,7 @@ import torch
 from torch_geometric.data import Data
 import numpy as np
 from sklearn.metrics import r2_score, mean_absolute_error
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, spearmanr
 from sklearn.linear_model import LinearRegression
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -227,7 +227,7 @@ class GraphSeriesData():
         if criterion == 'r2_score':
             return r2_score(predictions_np, true_labels_np)
         if criterion == 'correlation':
-            return pearsonr(predictions_np, true_labels_np)[0]
+            return spearmanr(predictions_np, true_labels_np)[0]
         if criterion == 'mae':
             return mean_absolute_error(predictions_np, true_labels_np)
 
