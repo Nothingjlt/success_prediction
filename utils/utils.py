@@ -215,7 +215,7 @@ class GraphSeriesData():
             all_indices = all_indices.union(self._train_idx).union(
                 self._test_idx).union(self._validation_idx)
         stacked_labels = torch.stack(
-            list(map(lambda x: self._get_labels_by_indices(x, self._test_idx), labels)))
+            list(map(lambda x: self._get_labels_by_indices(x, all_indices), labels)))
         return stacked_labels
 
     def _calc_criterion(self, predictions, true_labels, criterion):
@@ -227,7 +227,7 @@ class GraphSeriesData():
         if criterion == 'r2_score':
             return r2_score(predictions_np, true_labels_np)
         if criterion == 'correlation':
-            return spearmanr(predictions_np, true_labels_np)[0]
+            return spearmanr(predictions_np, true_labels_np).correlation
         if criterion == 'mae':
             return mean_absolute_error(predictions_np, true_labels_np)
 
