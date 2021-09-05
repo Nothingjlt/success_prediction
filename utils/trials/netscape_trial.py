@@ -419,6 +419,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         output_file_name = self._get_output_file_name()
         logger = TrialSummary(output_file_name)
         for i in range(self._params["num_iterations"]):
+            print(f'Iteration number {i+1} out of {self._params["num_iterations"]}')
             results.append(self.results_type(*self.run_one_test_iteration()))
         print('-'*100)
         for result in results:
