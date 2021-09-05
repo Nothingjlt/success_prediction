@@ -24,6 +24,17 @@ from collections import namedtuple
 #         csv_type_strings.append('\t'.join(sum(l, ())))
 #     open(file_name+".csv", 'w').write("\n".join(csv_type_strings))
 
+
+MEASURES = [
+    "betweenness_centrality",
+    "closeness_centrality",
+    "general",
+    "k_core",
+    "load_centrality",
+    "page_rank"
+]
+
+
 STATISTICS_RESULTS = namedtuple(
     'statistics_results',
     [
@@ -37,6 +48,14 @@ STATISTICS_RESULTS = namedtuple(
 
 
 P_VALUE_THRESHOLD = 0.05
+
+
+def split_file_name_to_measure_and_dataset(file_name):
+    for m in MEASURES:
+        if file_name.startswith(m):
+            file_name = file_name.replace(m + "_", "")
+            break
+    return m, file_name
 
 
 def get_statistics(x, y, alternative, should_be_greater=False):
@@ -71,6 +90,21 @@ def get_metric_statistics(metric_name, x_name, y_name, df, alternative, should_b
     return d
 
 
+def get_worst_case_statistics(metric_name, x_name_one, x_name_two, y_name, df, alternative, should_be_greater):
+    d = {}
+    if should_be_greater:
+        curr_df = df.loc[[x_name_one, x_name_two]].max(axis=0)
+    else:
+        curr_df = df.loc[[x_name_one, x_name_two]].min(axis=0)
+    d[metric_name] = get_statistics(
+        curr_df,
+        df.loc[y_name],
+        alternative=alternative,
+        should_be_greater=should_be_greater
+    )
+    return d, curr_df
+
+
 def add_values_to_df(df, line_id, col_id, value):
     df.at[line_id, col_id] = value
     return df
@@ -80,11 +114,11 @@ def prepare_file_df(root, file_name, add_train_results=False):
     acc_alternative = "two-sided"
     corr_alternative = "two-sided"
     mae_alternative = "two-sided"
-    measure = file_name.split("_")[0]
     df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
     models_index = get_latest_model_index(df)
     statistics = {}
     train_statistics = {}
+    worst_case_statistics = {}
     statistics.update(
         get_metric_statistics(
             "accuracy_0",
@@ -126,6 +160,17 @@ def prepare_file_df(root, file_name, add_train_results=False):
                 False
             )
         )
+        d, worst_case_df = get_worst_case_statistics(
+            "accuracy_0",
+            "model_accuracy_0",
+            "model_train_accuracy_0",
+            f"zero_model_tot_accuracy_{models_index}",
+            df,
+            acc_alternative,
+            False
+        )
+        df.loc[f"model_worst_case_accuracy_0"] = worst_case_df
+        worst_case_statistics.update(d)
         train_statistics.update(
             get_metric_statistics(
                 "correlation_0",
@@ -136,6 +181,17 @@ def prepare_file_df(root, file_name, add_train_results=False):
                 False
             )
         )
+        d, worst_case_df = get_worst_case_statistics(
+            "correlation_0",
+            "model_correlation_0",
+            "model_train_correlation_0",
+            f"zero_model_tot_correlation_{models_index}",
+            df,
+            corr_alternative,
+            False
+        )
+        df.loc[f"model_worst_case_correlation_0"] = worst_case_df
+        worst_case_statistics.update(d)
         train_statistics.update(
             get_metric_statistics(
                 "mae_0",
@@ -146,18 +202,34 @@ def prepare_file_df(root, file_name, add_train_results=False):
                 True
             )
         )
+        d, worst_case_df = get_worst_case_statistics(
+            "mae_0",
+            "model_mae_0",
+            "model_train_mae_0",
+            f"zero_model_tot_mae_{models_index}",
+            df,
+            mae_alternative,
+            True
+        )
+        df.loc[f"model_worst_case_mae_0"] = worst_case_df
+        worst_case_statistics.update(d)
         df = df.loc[[item for sublist in [
-            [f"model_{k}", f"model_train_{k}", f"zero_model_tot_{k[:-1] + str(models_index)}"] for k in statistics.keys()] for item in sublist]]
+            [f"model_{k}", f"model_train_{k}", f"model_worst_case_{k}", f"zero_model_tot_{k[:-1] + str(models_index)}"] for k in statistics.keys()] for item in sublist]]
     else:
         df = df.loc[[item for sublist in [
             [f"model_{k}", f"zero_model_tot_{k[:-1] + str(models_index)}"] for k in statistics.keys()] for item in sublist]]
     for k, v in statistics.items():
         zero_model_index = k.replace('_0', f"_{models_index}")
-        df = add_values_to_df(df, f"model_{k}", "percentage_improvement", v.perc_improvement)
-        df = add_values_to_df(df, f"model_{k}", "two_sided_paired_t_value", v.ttest_statistic)
-        df = add_values_to_df(df, f"model_{k}", "two_sided_paired_t_test_pvalue", v.ttest_pvalue)
-        df = add_values_to_df(df, f"model_{k}", "two_sided_wilcoxon_statistic", v.wilcoxon_statistic)
-        df = add_values_to_df(df, f"model_{k}", "two_sided_wilcoxon_pvalue", v.wilcoxon_pvalue)
+        df = add_values_to_df(
+            df, f"model_{k}", "percentage_improvement", v.perc_improvement)
+        df = add_values_to_df(
+            df, f"model_{k}", "two_sided_paired_t_value", v.ttest_statistic)
+        df = add_values_to_df(
+            df, f"model_{k}", "two_sided_paired_t_test_pvalue", v.ttest_pvalue)
+        df = add_values_to_df(
+            df, f"model_{k}", "two_sided_wilcoxon_statistic", v.wilcoxon_statistic)
+        df = add_values_to_df(
+            df, f"model_{k}", "two_sided_wilcoxon_pvalue", v.wilcoxon_pvalue)
 
         model_won = v.perc_improvement > 0 and v.wilcoxon_pvalue < P_VALUE_THRESHOLD
         model_lost = v.perc_improvement < 0 and v.wilcoxon_pvalue < P_VALUE_THRESHOLD
@@ -167,18 +239,38 @@ def prepare_file_df(root, file_name, add_train_results=False):
             model_score_against_null_model = "lost"
         else:
             model_score_against_null_model = "inconclusive"
-        df = add_values_to_df(df, f"model_{k}", "score_against_null_model", model_score_against_null_model)
-        
+        df = add_values_to_df(
+            df, f"model_{k}", "score_against_null_model", model_score_against_null_model)
+
         if add_train_results:
             train_stats = train_statistics[k]
-            df = add_values_to_df(df, f"model_train_{k}", "percentage_improvement", train_stats.perc_improvement)
-            df = add_values_to_df(df, f"model_train_{k}", "two_sided_paired_t_value", train_stats.ttest_statistic)
-            df = add_values_to_df(df, f"model_train_{k}", "two_sided_paired_t_test_pvalue", train_stats.ttest_pvalue)
-            df = add_values_to_df(df, f"model_train_{k}", "two_sided_wilcoxon_statistic", train_stats.wilcoxon_statistic)
-            df = add_values_to_df(df, f"model_train_{k}", "two_sided_wilcoxon_pvalue", train_stats.wilcoxon_pvalue)
+            df = add_values_to_df(
+                df, f"model_train_{k}", "percentage_improvement", train_stats.perc_improvement)
+            df = add_values_to_df(
+                df, f"model_train_{k}", "two_sided_paired_t_value", train_stats.ttest_statistic)
+            df = add_values_to_df(
+                df, f"model_train_{k}", "two_sided_paired_t_test_pvalue", train_stats.ttest_pvalue)
+            df = add_values_to_df(
+                df, f"model_train_{k}", "two_sided_wilcoxon_statistic", train_stats.wilcoxon_statistic)
+            df = add_values_to_df(
+                df, f"model_train_{k}", "two_sided_wilcoxon_pvalue", train_stats.wilcoxon_pvalue)
+
+            worst_case_stats = worst_case_statistics[k]
+            df = add_values_to_df(
+                df, f"model_worst_case_{k}", "percentage_improvement", worst_case_stats.perc_improvement)
+            df = add_values_to_df(
+                df, f"model_worst_case_{k}", "two_sided_paired_t_value", worst_case_stats.ttest_statistic)
+            df = add_values_to_df(
+                df, f"model_worst_case_{k}", "two_sided_paired_t_test_pvalue", worst_case_stats.ttest_pvalue)
+            df = add_values_to_df(
+                df, f"model_worst_case_{k}", "two_sided_wilcoxon_statistic", worst_case_stats.wilcoxon_statistic)
+            df = add_values_to_df(
+                df, f"model_worst_case_{k}", "two_sided_wilcoxon_pvalue", worst_case_stats.wilcoxon_pvalue)
 
             model_train_won = train_stats.perc_improvement > 0 and train_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
             model_train_lost = train_stats.perc_improvement < 0 and train_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
+            model_worst_case_won = worst_case_stats.perc_improvement > 0 and worst_case_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
+            model_worst_case_lost = worst_case_stats.perc_improvement < 0 and worst_case_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
 
             if model_train_won:
                 model_train_score_against_null_model = "won"
@@ -187,24 +279,44 @@ def prepare_file_df(root, file_name, add_train_results=False):
             else:
                 model_train_score_against_null_model = "inconclusive"
 
-            df = add_values_to_df(df, f"model_train_{k}", "score_against_null_model", model_train_score_against_null_model)
+            if model_worst_case_won:
+                model_worst_case_score_against_null_model = "won"
+            elif model_worst_case_lost:
+                model_worst_case_score_against_null_model = "lost"
+            else:
+                model_worst_case_score_against_null_model = "inconclusive"
+
+            df = add_values_to_df(
+                df, f"model_train_{k}", "score_against_null_model", model_train_score_against_null_model)
+            df = add_values_to_df(
+                df, f"model_worst_case_{k}", "score_against_null_model", model_worst_case_score_against_null_model)
 
             potential_overfit = False
             if model_train_won and not model_won:
                 potential_overfit = True
-            
-            df = add_values_to_df(df, f"model_{k}", "potential_overfit", potential_overfit)
-            df = add_values_to_df(df, f"model_train_{k}", "potential_overfit", potential_overfit)
-        
+
+            df = add_values_to_df(
+                df, f"model_{k}", "potential_overfit", potential_overfit)
+            df = add_values_to_df(
+                df, f"model_train_{k}", "potential_overfit", potential_overfit)
+            df = add_values_to_df(
+                df, f"model_worst_case_{k}", "potential_overfit", potential_overfit)
+
         else:
-            df = add_values_to_df(df, f"zero_model_tot_{zero_model_index}", "percentage_improvement", v.perc_improvement)
-            df = add_values_to_df(df, f"zero_model_tot_{zero_model_index}", "two_sided_paired_t_value", v.ttest_statistic)
-            df = add_values_to_df(df, f"zero_model_tot_{zero_model_index}", "two_sided_paired_t_test_pvalue", v.ttest_pvalue)
-            df = add_values_to_df(df, f"zero_model_tot_{zero_model_index}", "two_sided_wilcoxon_statistic", v.wilcoxon_statistic)
-            df = add_values_to_df(df, f"zero_model_tot_{zero_model_index}", "two_sided_wilcoxon_pvalue", v.wilcoxon_pvalue)
+            df = add_values_to_df(
+                df, f"zero_model_tot_{zero_model_index}", "percentage_improvement", v.perc_improvement)
+            df = add_values_to_df(
+                df, f"zero_model_tot_{zero_model_index}", "two_sided_paired_t_value", v.ttest_statistic)
+            df = add_values_to_df(
+                df, f"zero_model_tot_{zero_model_index}", "two_sided_paired_t_test_pvalue", v.ttest_pvalue)
+            df = add_values_to_df(
+                df, f"zero_model_tot_{zero_model_index}", "two_sided_wilcoxon_statistic", v.wilcoxon_statistic)
+            df = add_values_to_df(
+                df, f"zero_model_tot_{zero_model_index}", "two_sided_wilcoxon_pvalue", v.wilcoxon_pvalue)
     df.fillna('', inplace=True)
+    measure, dataset = split_file_name_to_measure_and_dataset(file_name)
     df["measure"] = measure
-    df["dataset"] = file_name
+    df["dataset"] = dataset
     return df
 
 
