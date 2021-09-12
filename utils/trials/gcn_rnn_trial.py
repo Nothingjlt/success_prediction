@@ -25,8 +25,6 @@ class GCNRNNTrial(NETSCAPETrial):
         return graphs_before_cut[-graphs_cutoff_number:], labels_before_cut[-graphs_cutoff_number:], features_before_cut[-graphs_cutoff_number:]
 
     def _add_specific_parser_arguments(self):
-        self._argparser.add_argument("--log-guard-scale", type=float, default=10,
-                                     help="Scale of log guard, used to guard against taking log of 0")
         self._argparser.add_argument("--graphs-cutoff-number", type=int, default=2,
                                      help="Number of time steps to take into consideration, used from last to first")
         self._argparser.add_argument("--gcn-dropout-rate", type=float, default=0.7,
