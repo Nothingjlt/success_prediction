@@ -433,8 +433,6 @@ class NETSCAPETrial(metaclass=ABCMeta):
                                      help="Number of iterations per test")
         self._argparser.add_argument("--print-every-num-of-epochs", type=int, default=100,
                                      help="Number of epochs between summary prints")
-        self._argparser.add_argument("--log-guard-scale", type=float, default=10,
-                                     help="Scale of log guard, used to guard against taking log of 0")
         self._argparser.add_argument("--l1-lambda", type=float, default=0,
                                      help="L1 norm regularization weight")
         self._argparser.add_argument("--epochs", type=int, default=500,
