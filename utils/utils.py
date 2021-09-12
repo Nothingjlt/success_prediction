@@ -1,9 +1,13 @@
+from numpy.lib.function_base import average
 import torch
+from sklearn.metrics import mean_squared_error
+from torch.nn.modules import loss
 from torch_geometric.data import Data
 import numpy as np
 from sklearn.metrics import r2_score, mean_absolute_error
 from scipy.stats import pearsonr, spearmanr
 from sklearn.linear_model import LinearRegression
+from utils.models import comparison_models
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -122,12 +126,14 @@ class GraphSeriesData():
         self._test_idx = [self._node_id_to_idx[node] for node in test]
         self._validation_idx = [self._node_id_to_idx[node]
                                 for node in validation]
-    
+
     def _calc_log_eps(self, labels_list):
         all_indices = self._train_idx + self._test_idx + self._validation_idx
-        ll = list(map(lambda x: self._get_values_by_indices(x, self._learned_label, all_indices), labels_list))
-        assert(np.all([labels[labels>0].shape[0] != 0 for labels in ll]))
-        min_positive_label = np.min([labels[labels > 0].min() for labels in ll])
+        ll = list(map(lambda x: self._get_values_by_indices(
+            x, self._learned_label, all_indices), labels_list))
+        assert(np.all([labels[labels > 0].shape[0] != 0 for labels in ll]))
+        min_positive_label = np.min(
+            [labels[labels > 0].min() for labels in ll])
         self._eps = min_positive_label/self._log_guard_scale
         return
 
@@ -218,9 +224,7 @@ class GraphSeriesData():
             list(map(lambda x: self._get_labels_by_indices(x, all_indices), labels)))
         return stacked_labels
 
-    def _calc_criterion(self, predictions, true_labels, criterion):
-        predictions_np = predictions.cpu().detach().numpy()
-        true_labels_np = true_labels.cpu().detach().numpy()
+    def _calc_criterion_np(self, predictions_np, true_labels_np, criterion, loss_criterion=mean_squared_error):
         if self._learn_logs:
             predictions_np = np.exp(predictions_np)
             true_labels_np = np.exp(true_labels_np)
@@ -230,6 +234,13 @@ class GraphSeriesData():
             return spearmanr(predictions_np, true_labels_np).correlation
         if criterion == 'mae':
             return mean_absolute_error(predictions_np, true_labels_np)
+        if criterion == 'loss':
+            return loss_criterion(predictions_np, true_labels_np)
+
+    def _calc_criterion(self, predictions, true_labels, criterion):
+        predictions_np = predictions.cpu().detach().numpy()
+        true_labels_np = true_labels.cpu().detach().numpy()
+        return self._calc_criterion_np(predictions_np, true_labels_np, criterion)
 
     def evaluate_r2_score(self, predictions, true_labels):
         return self._calc_criterion(predictions, true_labels, 'r2_score')
@@ -245,109 +256,102 @@ class GraphSeriesData():
         true_labels_log = torch.log(true_labels)
         return self.evaluate_r2_score(predictions_log, true_labels_log)
 
-    def evaluate_zero_model_total_num(self, labels, indices, loss_criterion=torch.nn.MSELoss()):
-        stacked_labels = self._get_stacked_labels_by_indices_set(
-            labels, indices)
+    def _evaluate_any_model(self, model, labels, indices, loss_criterion, minimum_supported_index):
         losses = []
-        predictions = []
-        true_labels = []
         accuracies = []
         correlations = []
         maes = []
-        for idx, l in enumerate(stacked_labels[:-1]):
-            true_labels.append(stacked_labels[idx + 1])
-            predictions.append(l)
-
-            losses.append(loss_criterion(predictions[-1], true_labels[-1]))
-            accuracies.append(self.evaluate_r2_score(
-                predictions[-1], true_labels[-1]))
-            correlations.append(self.evaluate_correlation(
-                predictions[-1], true_labels[-1]))
-            maes.append(self.evaluate_mae(
-                predictions[-1], true_labels[-1]))
-        return losses, accuracies, correlations, maes
-
-    def evaluate_zero_model_diff(self, labels, indices, loss_criterion=torch.nn.MSELoss()):
         stacked_labels = self._get_stacked_labels_by_indices_set(
-            labels, indices)
-        losses = []
-        predictions = []
-        true_labels = []
-        accuracies = []
-        correlations = []
-        maes = []
-        for idx, l in enumerate(stacked_labels[:-1]):
-            true_labels.append(stacked_labels[idx + 1]-l)
-            predictions.append(torch.zeros(len(l), device=DEVICE))
-
-            losses.append(loss_criterion(predictions[-1], true_labels[-1]))
-            accuracies.append(self.evaluate_r2_score(
-                predictions[-1], true_labels[-1]))
-            correlations.append(self.evaluate_correlation(
-                predictions[-1], true_labels[-1]))
-            maes.append(self.evaluate_mae(
-                predictions[-1], true_labels[-1]))
+            labels,
+            indices
+        )
+        model.train(stacked_labels.cpu().numpy())
+        for t in range(minimum_supported_index, stacked_labels.shape[0]):
+            model_results = model.predict_label(t)
+            losses.append(
+                self._calc_criterion_np(
+                    model_results.model_prediction,
+                    model_results.true_label,
+                    "loss",
+                    loss_criterion=loss_criterion
+                )
+            )
+            accuracies.append(
+                self._calc_criterion_np(
+                    model_results.model_prediction,
+                    model_results.true_label,
+                    "r2_score"
+                )
+            )
+            correlations.append(
+                self._calc_criterion_np(
+                    model_results.model_prediction,
+                    model_results.true_label,
+                    "correlation"
+                )
+            )
+            maes.append(
+                self._calc_criterion_np(
+                    model_results.model_prediction,
+                    model_results.true_label,
+                    "mae"
+                )
+            )
         return losses, accuracies, correlations, maes
 
-    def evaluate_first_order_model_total_number(self, labels, indices, loss_criterion=torch.nn.MSELoss()):
-        stacked_labels = self._get_stacked_labels_by_indices_set(
-            labels, indices)
-        losses = []
-        predictions = []
-        true_labels = []
-        accuracies = []
-        correlations = []
-        maes = []
-        lin_reg_models = []
-        time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
-        for idx, n in enumerate(stacked_labels.T):
-            lin_reg_models.append(
-                LinearRegression().fit(time_steps, n[:-1].cpu()))
+    def evaluate_null_model_total_num(self, labels, indices, loss_criterion=mean_squared_error):
+        nm = comparison_models.NullModel()
+        return self._evaluate_any_model(nm, labels, indices, loss_criterion, 1)
 
-        for idx, l in enumerate(stacked_labels[:-1]):
-            true_labels.append(stacked_labels[idx + 1])
-            predictions.append(torch.tensor(
-                [m.predict(np.array([[idx+1]])) for m in lin_reg_models], device=DEVICE).view(-1))
+    def evaluate_null_model_diff(self, labels, indices, loss_criterion=mean_squared_error):
+        nmd = comparison_models.NullDiffModel()
+        return self._evaluate_any_model(nmd, labels, indices, loss_criterion, 1)
 
-            losses.append(loss_criterion(predictions[idx], true_labels[idx]))
-            accuracies.append(self.evaluate_r2_score(
-                predictions[idx], true_labels[idx]))
-            correlations.append(self.evaluate_correlation(
-                predictions[idx], true_labels[idx]))
-            maes.append(self.evaluate_mae(
-                predictions[idx], true_labels[idx]))
+    def evaluate_first_order_total_num(self, labels, indices, average_time=None, epsilon=0, loss_criterion=mean_squared_error):
+        if average_time is None:
+            average_time = len(labels) - 1
+        fom = comparison_models.PolynomialRegressionModel(
+            average_time,
+            1,
+            epsilon
+        )
+        return self._evaluate_any_model(fom, labels, indices, loss_criterion, average_time)
 
-        return losses, accuracies, correlations, maes
+    def evaluate_uniform_average(self, labels, indices, average_time=None, loss_criterion=mean_squared_error):
+        if average_time is None:
+            average_time = len(labels) - 1
+        uam = comparison_models.UniformAverageModel(average_time)
+        return self._evaluate_any_model(uam, labels, indices, loss_criterion, average_time)
 
-    def evaluate_first_order_model_diff(self, labels, indices, loss_criterion=torch.nn.MSELoss()):
-        stacked_labels = self._get_stacked_labels_by_indices_set(
-            labels, indices)
-        losses = []
-        predictions = []
-        true_labels = []
-        accuracies = []
-        correlations = []
-        maes = []
-        lin_reg_models = []
-        time_steps = np.arange(len(stacked_labels)-1).reshape(-1, 1)
-        for idx, n in enumerate(stacked_labels.T):
-            diffs = []
-            for idx, m in enumerate(n[:-1]):
-                diffs.append(n[idx+1]-m)
-            lin_reg_models.append(
-                LinearRegression().fit(time_steps, diffs))
+    def evaluate_linear_weighted_average(self, labels, indices, average_time=None, loss_criterion=mean_squared_error):
+        if average_time is None:
+            average_time = len(labels) - 1
+        lwam = comparison_models.LinearWeightedAverageModel(average_time)
+        return self._evaluate_any_model(lwam, labels, indices, loss_criterion, average_time)
 
-        for idx, l in enumerate(stacked_labels[:-1]):
-            true_labels.append(stacked_labels[idx + 1]-l)
-            predictions.append(torch.tensor([m.predict(
-                np.array([[idx+1]])) for m in lin_reg_models], device=DEVICE).view(-1))
+    def evaluate_square_root_weighted_average(self, labels, indices, average_time=None, loss_criterion=mean_squared_error):
+        if average_time is None:
+            average_time = len(labels) - 1
+        srwam = comparison_models.SquareRootWeightedAverageModel(average_time)
+        return self._evaluate_any_model(srwam, labels, indices, loss_criterion, average_time)
 
-            losses.append(loss_criterion(predictions[idx], true_labels[idx]))
-            accuracies.append(self.evaluate_r2_score(
-                predictions[idx], true_labels[idx]))
-            correlations.append(self.evaluate_correlation(
-                predictions[idx], true_labels[idx]))
-            maes.append(self.evaluate_mae(
-                predictions[idx], true_labels[idx]))
+    def evaluate_polynomial_regression(self, labels, indices, average_time=None, degree=3, epsilon=0.05, loss_criterion=mean_squared_error):
+        if average_time is None:
+            average_time = len(labels) - 1
+        prm = comparison_models.PolynomialRegressionModel(
+            average_time, degree, epsilon)
+        return self._evaluate_any_model(prm, labels, indices, loss_criterion, average_time)
 
-        return losses, accuracies, correlations, maes
+    def evaluate_uniform_periodic_average(self, labels, indices, average_time=None, period=7, epsilon=0.05, loss_criterion=mean_squared_error):
+        if average_time is None:
+            average_time = len(labels) - 1
+        upam = comparison_models.UniformPeriodicAverageModel(
+            average_time, period, epsilon)
+        return self._evaluate_any_model(upam, labels, indices, loss_criterion, average_time)
+
+    def evaluate_weighted_periodic_average(self, labels, indices, average_time=None, period=7, epsilon=0.05, loss_criterion=mean_squared_error):
+        if average_time is None:
+            average_time = len(labels) - 1
+        wpam = comparison_models.WeightedPeriodicAverageModel(
+            average_time, period, epsilon)
+        return self._evaluate_any_model(wpam, labels, indices, loss_criterion, average_time)

@@ -1,3 +1,5 @@
+from numpy.core.numeric import correlate
+from utils.models.comparison_models import FirstOrderDiffModel
 import torch
 import pickle
 import numpy as np
@@ -15,27 +17,29 @@ import nni
 
 
 class NETSCAPETrial(metaclass=ABCMeta):
-    results_type = namedtuple(
+    _model_evaluation_results_type = namedtuple(
+        "MODEL_RESULTS",
+        [
+            "mses",
+            "accuracies",
+            "correlations",
+            "maes"
+        ]
+    )
+    _all_results_type = namedtuple(
         "Results",
         [
-            "model_accuracy",
-            "model_correlation",
-            "model_mae",
-            "model_train_accuracy",
-            "model_train_correlation",
-            "model_train_mae",
-            "zero_model_tot_accuracy",
-            "zero_model_tot_correlation",
-            "zero_model_tot_mae",
-            "first_order_tot_accuracy",
-            "first_order_tot_correlation",
-            "first_order_tot_mae",
-            "zero_model_diff_accuracy",
-            "zero_model_diff_correlation",
-            "zero_model_diff_mae",
-            "first_order_diff_accuracy",
-            "first_order_diff_correlation",
-            "first_order_diff_mae"
+            "model_test",
+            "model_train",
+            "null_model",
+            "first_order_model",
+            "null_diff_model",
+            "uniform_average_model",
+            "linear_weighted_average_model",
+            "square_root_weighted_average_model",
+            "polynomial_regression_model",
+            "uniform_periodic_average_model",
+            "weighted_periodic_average_model"
         ]
     )
 
@@ -147,36 +151,39 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         return graphs, labels, graph_features
 
+    def _add_learned_label_to_features(self, labels, graph_features, add_labels_of_all_times: bool = False):
+        assert len(labels) == len(graph_features)
+        for label, graph_feature in zip(labels, graph_features):
+            if add_labels_of_all_times:
+                graph_feature[
+                    self._params["learned_label"]
+                ] = label[self._params["learned_label"]]
+            # Add label of last time step that is not the predicted one
+            else:
+                graph_feature[
+                    self._params["learned_label"]
+                ] = labels[-2][self._params["learned_label"]]
+        return graph_features
+
     def run_trial(self):
         print(self._params)
         learned_label = self._params["learned_label"]
         graphs, labels, graph_features = self.load_input()
         # GPU memory limited, using only subset of time steps
         graphs, labels, graph_features = self._cut_graphs_list(
-            graphs, labels, graph_features)
+            graphs,
+            labels,
+            graph_features
+        )
+        graph_features = self._add_learned_label_to_features(
+            labels,
+            graph_features,
+            self._params["add_labels_of_all_times"]
+        )
         train, test, validation = NETSCAPETrial.train_test_split(
-            graphs, train_ratio=0.7)
-
-        model_loss_list = []
-        model_accuracy_list = []
-        model_correlation_list = []
-        model_mae_list = []
-        model_train_loss_list = []
-        model_train_accuracy_list = []
-        model_train_correlation_list = []
-        model_train_mae_list = []
-        zero_model_tot_loss_list = []
-        zero_model_tot_accuracy_list = []
-        zero_model_tot_mae_list = []
-        first_order_tot_loss_list = []
-        first_order_tot_accuracy_list = []
-        first_order_tot_mae_list = []
-        zero_model_diff_loss_list = []
-        zero_model_diff_accuracy_list = []
-        zero_model_diff_mae_list = []
-        first_order_diff_loss_list = []
-        first_order_diff_accuracy_list = []
-        first_order_diff_mae_list = []
+            graphs,
+            train_ratio=0.7
+        )
 
         graph_data = GraphSeriesData(self._params["log_guard_scale"])
 
@@ -197,110 +204,94 @@ class NETSCAPETrial(metaclass=ABCMeta):
         model = self._get_model(graph_data)
         model.train()
         with torch.no_grad():
-            (
-                test_loss,
-                test_accuracy,
-                test_correlation,
-                test_mae
-            ) = model.evaluate("test", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
-            (
-                train_loss,
-                train_accuracy,
-                train_correlation,
-                train_mae
-            ) = model.evaluate("train", evaluate_accuracy=True, evaluate_correlation=True, evaluate_mae=True)
+            model_test_evaluation = self._model_evaluation_results_type(
+                *model.evaluate(
+                    "test",
+                    evaluate_accuracy=True,
+                    evaluate_correlation=True,
+                    evaluate_mae=True
+                )
+            )
+            model_test_evaluation = model_test_evaluation._replace(
+                mses=[model_test_evaluation.mses.cpu().numpy()],
+                accuracies=[model_test_evaluation.accuracies],
+                correlations=[model_test_evaluation.correlations],
+                maes=[model_test_evaluation.maes]
+            )
 
-            (
-                zero_model_tot_loss_list,
-                zero_model_tot_accuracy_list,
-                zero_model_tot_correlation_list,
-                zero_model_tot_mae_list
-            ) = graph_data.evaluate_zero_model_total_num(labels, "test")
-            (
-                first_order_tot_loss_list,
-                first_order_tot_accuracy_list,
-                first_order_tot_correlation_list,
-                first_order_tot_mae_list
-            ) = graph_data.evaluate_first_order_model_total_number(labels, "test")
-            (
-                zero_model_diff_loss_list,
-                zero_model_diff_accuracy_list,
-                zero_model_diff_correlation_list,
-                zero_model_diff_mae_list
-            ) = graph_data.evaluate_zero_model_diff(labels, "test")
-            (
-                first_order_diff_loss_list,
-                first_order_diff_accuracy_list,
-                first_order_diff_correlation_list,
-                first_order_diff_mae_list
-            ) = graph_data.evaluate_first_order_model_diff(labels, "test")
+            model_train_evaluation = self._model_evaluation_results_type(
+                *model.evaluate(
+                    "train",
+                    evaluate_accuracy=True,
+                    evaluate_correlation=True,
+                    evaluate_mae=True
+                )
+            )
+            model_train_evaluation = model_train_evaluation._replace(
+                mses=[model_train_evaluation.mses.cpu().numpy()],
+                accuracies=[model_train_evaluation.accuracies],
+                correlations=[model_train_evaluation.correlations],
+                maes=[model_train_evaluation.maes]
+            )
+
+            null_model_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_null_model_total_num(labels, "test")
+            )
+            first_order_model_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_first_order_total_num(labels, "test")
+            )
+            null_model_diff_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_null_model_diff(labels, "test")
+            )
+            uniform_average_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_uniform_average(labels, "test")
+            )
+            linear_weighted_average_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_linear_weighted_average(labels, "test")
+            )
+            square_root_weighted_average_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_square_root_weighted_average(labels, "test")
+            )
+            polynomial_regression_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_polynomial_regression(labels, "test")
+            )
+            uniform_periodic_average_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_uniform_periodic_average(labels, "test")
+            )
+            weighted_periodic_average_evaluation = self._model_evaluation_results_type(
+                *graph_data.evaluate_weighted_periodic_average(labels, "test")
+            )
 
         if self._nni:
             nni.report_intermediate_result(
-                test_accuracy - zero_model_tot_accuracy_list[-1])
+                model_test_evaluation.accuracies -
+                null_model_evaluation.accuracies[-1]
+            )
 
-        model_loss_list.append(test_loss)
-        model_accuracy_list.append(test_accuracy)
-        model_correlation_list.append(test_correlation)
-        model_mae_list.append(test_mae)
+        all_results = self._all_results_type(
+            model_test_evaluation,
+            model_train_evaluation,
+            null_model_evaluation,
+            first_order_model_evaluation,
+            null_model_diff_evaluation,
+            uniform_average_evaluation,
+            linear_weighted_average_evaluation,
+            square_root_weighted_average_evaluation,
+            polynomial_regression_evaluation,
+            uniform_periodic_average_evaluation,
+            weighted_periodic_average_evaluation
+        )
 
-        model_train_loss_list.append(train_loss)
-        model_train_accuracy_list.append(train_accuracy)
-        model_train_correlation_list.append(train_correlation)
-        model_train_mae_list.append(train_mae)
-
-        print(
-            f"test loss: {np.mean([m.data.item() for m in model_loss_list]):.5f}, test accuracy: {np.mean(model_accuracy_list):.5f}, "
-            f"test correlation: {np.mean(model_correlation_list):.5f}, test_mae: {np.mean(model_mae_list):.5f}"
-        )
-        print(
-            f"train loss: {np.mean([m.data.item() for m in model_train_loss_list]):.5f}, train accuracy: {np.mean(model_train_accuracy_list):.5f}, "
-            f"train correlation: {np.mean(model_train_correlation_list):.5f}, train mae: {np.mean(model_train_mae_list):.5f}"
-        )
-        print(
-            f"zero model loss: {np.mean([m.data.item() for m in zero_model_tot_loss_list]):.5f}, zero model accuracy: {np.mean(zero_model_tot_accuracy_list):.5f}, "
-            f"zero model correlation: {np.mean(zero_model_tot_correlation_list):.5f}, zero model mae: {np.mean(zero_model_tot_mae_list):.5f}"
-        )
-        print(
-            f"first order model loss: {np.mean([m.data.item() for m in first_order_tot_loss_list]):.5f}, first order model accuracy: {np.mean(first_order_tot_accuracy_list):.5f}, "
-            f"first order model correlation: {np.mean(first_order_tot_correlation_list):.5f}, first order model mae: {np.mean(first_order_tot_mae_list):.5f}"
-        )
-        print(
-            f"zero diff model loss: {np.mean([m.data.item() for m in zero_model_diff_loss_list]):.5f}, zero diff model accuracy: {np.mean(zero_model_diff_accuracy_list):.5f}, "
-            f"zero diff model correlation: {np.mean(zero_model_diff_correlation_list):.5f}, zero diff model mae: {np.mean(zero_model_diff_mae_list):.5f}"
-        )
-        print(
-            f"first order diff model loss: {np.mean([m.data.item() for m in first_order_diff_loss_list]):.5f}, first order diff model accuracy: {np.mean(first_order_diff_accuracy_list):.5f}, "
-            f"first order diff model correlation: {np.mean(first_order_diff_correlation_list):.5f}, first order diff model mae: {np.mean(first_order_diff_mae_list):.5f}"
-        )
+        for name, evaluation in all_results._asdict().items():
+            print(
+                f"{name.replace('_', ' ')} mse: {np.mean([m for m in evaluation.mses]):.5f}, "
+                f"{name.replace('_', ' ')} accuracy: {np.mean(evaluation.accuracies):.5f}, "
+                f"{name.replace('_', ' ')} correlation: {np.mean(evaluation.correlations):.5f}, "
+                f"{name.replace('_', ' ')} mae: {np.mean(evaluation.maes):.5f}"
+            )
         print("\n")
 
-        return (
-            [m.data.item() for m in model_loss_list],
-            model_accuracy_list,
-            model_correlation_list,
-            model_mae_list,
-            [m.data.item() for m in model_train_loss_list],
-            model_train_accuracy_list,
-            model_train_correlation_list,
-            model_train_mae_list,
-            [m.data.item() for m in zero_model_tot_loss_list],
-            zero_model_tot_accuracy_list,
-            zero_model_tot_correlation_list,
-            zero_model_tot_mae_list,
-            [m.data.item() for m in first_order_tot_loss_list],
-            first_order_tot_accuracy_list,
-            first_order_tot_correlation_list,
-            first_order_tot_mae_list,
-            [m.data.item() for m in zero_model_diff_loss_list],
-            zero_model_diff_accuracy_list,
-            zero_model_diff_correlation_list,
-            zero_model_diff_mae_list,
-            [m.data.item() for m in first_order_diff_loss_list],
-            first_order_diff_accuracy_list,
-            first_order_diff_correlation_list,
-            first_order_diff_mae_list
-        )
+        return all_results
 
     @abstractmethod
     def _get_model(self, graph_data):
@@ -344,68 +335,67 @@ class NETSCAPETrial(metaclass=ABCMeta):
             ret_features.append(flattened_feature_dict)
         return ret_features
 
+    def _print_all_results(self, all_results):
+        mses = {}
+        accuracies = {}
+        correlations = {}
+        maes = {}
+        for name, evaluation in all_results._asdict().items():
+            mses[name] = evaluation.mses
+            accuracies[name] = evaluation.accuracies
+            correlations[name] = evaluation.correlations
+            maes[name] = evaluation.maes
+        mses_string_list = ["Final result (mse):"]
+        accuracies_string_list = ["Final result (accuracy):"]
+        correlations_string_list = ["Final result (correlation):"]
+        maes_string_list = ["Final result (mae):"]
+        for name, mse in accuracies.items():
+            mses_string_list.append(
+                f"{name.replace('_', ' ')} mse:"
+            )
+            mses_string_list.append(f"{mse},")
+        # Remove last comma
+        mses_string_list[-1] = mses_string_list[-1][:-1]
+        for name, accuracy in accuracies.items():
+            accuracies_string_list.append(
+                f"{name.replace('_', ' ')} accuracy:"
+            )
+            accuracies_string_list.append(f"{accuracy},")
+        # Remove last comma
+        accuracies_string_list[-1] = accuracies_string_list[-1][:-1]
+        for name, correlation in correlations.items():
+            correlations_string_list.append(
+                f"{name.replace('_', ' ')} correlation:"
+            )
+            correlations_string_list.append(f"{correlation},")
+        # Remove last comma
+        correlations_string_list[-1] = correlations_string_list[-1][:-1]
+        for name, mae in maes.items():
+            maes_string_list.append(f"{name.replace('_', ' ')} mae:")
+            maes_string_list.append(f"{mae},")
+        # Remove last comma
+        maes_string_list[-1] = maes_string_list[-1][:-1]
+
+        print(" ".join(mses_string_list))
+        print(" ".join(accuracies_string_list))
+        print(" ".join(correlations_string_list))
+        print(" ".join(maes_string_list))
+
+        return
+
     def run_one_test_iteration(self):
 
-        (
-            model_loss,
-            model_accuracy,
-            model_correlation,
-            model_mae,
-            model_train_loss,
-            model_train_accuracy,
-            model_train_correlation,
-            model_train_mae,
-            zero_model_tot_loss,
-            zero_model_tot_accuracy,
-            zero_model_tot_correlation,
-            zero_model_tot_mae,
-            first_order_tot_loss,
-            first_order_tot_accuracy,
-            first_order_tot_correlation,
-            first_order_tot_mae,
-            zero_model_diff_loss,
-            zero_model_diff_accuracy,
-            zero_model_diff_correlation,
-            zero_model_diff_mae,
-            first_order_diff_loss,
-            first_order_diff_accuracy,
-            first_order_diff_correlation,
-            first_order_diff_mae
-        ) = self.run_trial()
+        all_results = self.run_trial()
 
         if self._nni:
             nni.report_final_result(
-                model_accuracy[0]-zero_model_tot_accuracy[-1])
+                all_results.model_test.accuracies[-1] -
+                all_results.null_model.accuracies[-1]
+            )
         else:
-            print(f"Final result (accruacy): model accuracy: {model_accuracy}, zero_model_tot_accuracy: {zero_model_tot_accuracy}, "
-                  f"first order tot accuracy: {first_order_tot_accuracy}, zero model diff accuracy: {zero_model_diff_accuracy}, "
-                  f"first order diff accuracy: {first_order_diff_accuracy}, model train accuracy: {model_train_accuracy}")
-            print(f"Final result (correlation): model correlation: {model_correlation}, zero_model_tot_correlation: {zero_model_tot_correlation}, "
-                  f"first order tot correlation: {first_order_tot_correlation}, zero model diff correlation: {zero_model_diff_correlation}, "
-                  f"first order diff correlation: {first_order_diff_correlation}, model train correlation: {model_train_correlation}")
-            print(f"Final result (mae): model mae: {model_mae}, zero_model_tot_mae: {zero_model_tot_mae}, "
-                  f"first order tot mae: {first_order_tot_mae}, zero model diff mae: {zero_model_diff_mae}, "
-                  f"first order diff mae: {first_order_diff_mae}, model train mae: {model_train_mae}")
-        return (
-            model_accuracy,
-            model_correlation,
-            model_mae,
-            model_train_accuracy,
-            model_train_correlation,
-            model_train_mae,
-            zero_model_tot_accuracy,
-            zero_model_tot_correlation,
-            zero_model_tot_mae,
-            first_order_tot_accuracy,
-            first_order_tot_correlation,
-            first_order_tot_mae,
-            zero_model_diff_accuracy,
-            zero_model_diff_correlation,
-            zero_model_diff_mae,
-            first_order_diff_accuracy,
-            first_order_diff_correlation,
-            first_order_diff_mae
-        )
+            self._print_all_results(all_results)
+
+        return all_results
 
     def _get_output_file_name(self):
         output_file_name = "./" + self._default_out_dir + "/" + \
@@ -418,26 +408,21 @@ class NETSCAPETrial(metaclass=ABCMeta):
         results = []
         output_file_name = self._get_output_file_name()
         logger = TrialSummary(output_file_name)
+
         for i in range(self._params["num_iterations"]):
-            print(f'Iteration number {i+1} out of {self._params["num_iterations"]}')
-            results.append(self.results_type(*self.run_one_test_iteration()))
+            print(
+                f'Iteration number {i+1} out of {self._params["num_iterations"]}'
+            )
+            results.append(self.run_one_test_iteration())
         print('-'*100)
-        for result in results:
-            output_string = "\n".join([f"Final result: model accuracy: {result.model_accuracy}, zero model tot accuracy: {result.zero_model_tot_accuracy}, "
-                                       f"first order tot accuracy: {result.first_order_tot_accuracy}, zero model diff accuracy: {result.zero_model_diff_accuracy}, "
-                                       f"first order diff accuracy: {result.first_order_diff_accuracy}, model train accuracy: {result.model_train_accuracy},",
-                                       f"Final result: model correlation: {result.model_correlation}, zero model tot correlation: {result.zero_model_tot_correlation}, "
-                                       f"first order tot correlation: {result.first_order_tot_correlation}, zero model diff correlation: {result.zero_model_diff_correlation}, "
-                                       f"first order diff correlation: {result.first_order_diff_correlation}, model train correlation: {result.model_train_correlation}",
-                                       f"Final result: model mae: {result.model_mae}, zero model tot mae: {result.zero_model_tot_mae}, "
-                                       f"first order tot mae: {result.first_order_tot_mae}, zero model diff mae: {result.zero_model_diff_mae}, "
-                                       f"first order diff mae: {result.first_order_diff_mae}, model train mae: {result.model_train_mae}"])
-            print(output_string)
+        for result_idx, result in enumerate(results):
+            print(f"iteration {result_idx + 1} results")
+            self._print_all_results(result)
         logger.write_output(results)
         return results
 
     def _add_general_parser_arguments(self):
-        self._argparser.add_argument("--nni", action='store_true')
+        self._argparser.add_argument("--nni", action='store_true', help="Should only be used when run with nni.")
         self._argparser.add_argument("--seed", type=int,
                                      help="Optional random seed for run")
         self._argparser.add_argument("--data-folder-name", type=str, default="reality_mining",
@@ -458,6 +443,9 @@ class NETSCAPETrial(metaclass=ABCMeta):
                                      help="Learning rate for network")
         self._argparser.add_argument("--weight-decay", type=float, default=0,
                                      help="Weight decay regularization")
+        self._argparser.add_argument("--add-labels-of-all-times", action='store_true',
+                                     help="Decide whether learned label of each time should be added to features. "
+                                     "By default only learned label of last learned time is added to all times")
         learned_labels_choices = set(self._default_features_meta.keys())
         learned_labels_choices.add(self._all_labels_together)
         self._argparser.add_argument("--learned-label", type=str, default="betweenness_centrality", choices=learned_labels_choices,
@@ -516,13 +504,25 @@ class TrialSummary:
 
     def write_output(self, results):
         df = pd.DataFrame()
-        for single_test_result_index, single_test_result in enumerate(results):
-            for result_type, result_list in single_test_result._asdict().items():
-                for single_result_index, single_result in enumerate(result_list):
+        for single_run_result_index, single_run_result in enumerate(results):
+            for model_name, model_evaluation in single_run_result._asdict().items():
+                for metric_name, metric_list in model_evaluation._asdict().items():
+                    for single_metric_index, single_metric in enumerate(metric_list):
+                        df.at[
+                            f"{model_name}_{metric_name}_{single_metric_index}",
+                            single_run_result_index
+                        ] = single_metric
+        for model_name, model_evaluation in single_run_result._asdict().items():
+            for metric_name, metric_list in model_evaluation._asdict().items():
+                for single_metric_index, single_metric in enumerate(metric_list):
                     df.at[
-                        result_type+f"_{single_result_index}",
-                        single_test_result_index
-                    ] = single_result
+                        f"{model_name}_{metric_name}_{single_metric_index}",
+                        "metric"
+                    ] = metric_name
+                    df.at[
+                        f"{model_name}_{metric_name}_{single_metric_index}",
+                        "model"
+                    ] = model_name
         if not os.path.exists(os.path.dirname(self._output_file_name)):
             try:
                 os.makedirs(os.path.dirname(self._output_file_name))
