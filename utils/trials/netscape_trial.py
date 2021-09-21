@@ -34,12 +34,12 @@ class NETSCAPETrial(metaclass=ABCMeta):
             "null_model",
             "first_order_model",
             "null_diff_model",
-            "uniform_average_model",
-            "linear_weighted_average_model",
-            "square_root_weighted_average_model",
-            "polynomial_regression_model",
-            "uniform_periodic_average_model",
-            "weighted_periodic_average_model"
+            "uniform_average",
+            "linear_weighted_average",
+            "square_root_weighted_average",
+            "polynomial_regression",
+            "uniform_periodic_average",
+            "weighted_periodic_average"
         ]
     )
 
@@ -168,17 +168,17 @@ class NETSCAPETrial(metaclass=ABCMeta):
     def run_trial(self):
         print(self._params)
         learned_label = self._params["learned_label"]
-        graphs, labels, graph_features = self.load_input()
+        graphs_orig, labels_orig, graph_features_orig = self.load_input()
+        graph_features_orig = self._add_learned_label_to_features(
+            labels_orig,
+            graph_features_orig,
+            self._params["add_labels_of_all_times"]
+        )
         # GPU memory limited, using only subset of time steps
         graphs, labels, graph_features = self._cut_graphs_list(
-            graphs,
-            labels,
-            graph_features
-        )
-        graph_features = self._add_learned_label_to_features(
-            labels,
-            graph_features,
-            self._params["add_labels_of_all_times"]
+            graphs_orig,
+            labels_orig,
+            graph_features_orig
         )
         train, test, validation = NETSCAPETrial.train_test_split(
             graphs,
@@ -234,32 +234,48 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 maes=[model_train_evaluation.maes]
             )
 
+            comparison_graph_data = GraphSeriesData(
+                self._params["log_guard_scale"])
+            comparison_graph_data.load_data(
+                graphs_orig,
+                graph_features_orig,
+                user_node_id_to_idx=self._node_id_to_idx,
+                user_idx_to_node_id=self._idx_to_node_id,
+                learned_label=learned_label,
+                labels_list=labels_orig,
+                learn_logs=self._should_learn_logs(),
+                learn_diffs=self._should_learn_diff(),
+                train=train,
+                test=test,
+                validation=validation
+            )
+
             null_model_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_null_model_total_num(labels, "test")
+                *comparison_graph_data.evaluate_null_model_total_num(labels_orig, "test")
             )
             first_order_model_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_first_order_total_num(labels, "test")
+                *comparison_graph_data.evaluate_first_order_total_num(labels_orig, "test")
             )
             null_model_diff_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_null_model_diff(labels, "test")
+                *comparison_graph_data.evaluate_null_model_diff(labels_orig, "test")
             )
             uniform_average_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_uniform_average(labels, "test")
+                *comparison_graph_data.evaluate_uniform_average(labels_orig, "test")
             )
             linear_weighted_average_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_linear_weighted_average(labels, "test")
+                *comparison_graph_data.evaluate_linear_weighted_average(labels_orig, "test")
             )
             square_root_weighted_average_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_square_root_weighted_average(labels, "test")
+                *comparison_graph_data.evaluate_square_root_weighted_average(labels_orig, "test")
             )
             polynomial_regression_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_polynomial_regression(labels, "test")
+                *comparison_graph_data.evaluate_polynomial_regression(labels_orig, "test")
             )
             uniform_periodic_average_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_uniform_periodic_average(labels, "test")
+                *comparison_graph_data.evaluate_uniform_periodic_average(labels_orig, "test")
             )
             weighted_periodic_average_evaluation = self._model_evaluation_results_type(
-                *graph_data.evaluate_weighted_periodic_average(labels, "test")
+                *comparison_graph_data.evaluate_weighted_periodic_average(labels_orig, "test")
             )
 
         if self._nni:
@@ -422,7 +438,8 @@ class NETSCAPETrial(metaclass=ABCMeta):
         return results
 
     def _add_general_parser_arguments(self):
-        self._argparser.add_argument("--nni", action='store_true', help="Should only be used when run with nni.")
+        self._argparser.add_argument(
+            "--nni", action='store_true', help="Should only be used when run with nni.")
         self._argparser.add_argument("--seed", type=int,
                                      help="Optional random seed for run")
         self._argparser.add_argument("--data-folder-name", type=str, default="reality_mining",
@@ -486,15 +503,14 @@ class NETSCAPETrial(metaclass=ABCMeta):
     def set_learned_label(self, learned_label):
         self._params["learned_label"] = learned_label
 
-    def run_full_trial(self, label_to_learn=None):
+    def run_full_trial(self):
         self.prepare_params()
 
-        if label_to_learn is None or self._params['learned_label'] == self._all_labels_together:
+        if self._params['learned_label'] == self._all_labels_together:
             for learned_label in self._default_features_meta.keys():
                 self.set_learned_label(learned_label)
                 self.iterate_test()
         else:
-            self.set_learned_label(label_to_learn)
             self.iterate_test()
 
 

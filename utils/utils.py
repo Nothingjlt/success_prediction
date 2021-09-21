@@ -163,6 +163,9 @@ class GraphSeriesData():
                     key,
                     indices
                 )
+                if key == 'general':
+                    new_features = GraphSeriesData._sum_general_label(
+                        new_features)
                 all_features = torch.cat(
                     (
                         all_features,
@@ -174,14 +177,20 @@ class GraphSeriesData():
             ret_features.append(all_features)
         return ret_features
 
+    @staticmethod
+    def _sum_general_label(labels):
+        if labels.dim() == 2:
+            return labels.sum(dim=1)
+        else:
+            return labels
+
     def _get_labels_by_indices(self, labels, indices):
         ret_labels = self._get_values_by_indices(
             labels, self._learned_label, indices)
         # Special case where rank is required, calculate log(rank)
         if self._learned_label == "general":
             # When in_deg and out_deg are calculated seperately, learn their sum.
-            if ret_labels.dim() == 2:
-                ret_labels = ret_labels.sum(dim=1)
+            ret_labels = GraphSeriesData._sum_general_label(ret_labels)
         if self._learn_logs:
             ret_labels = torch.log(ret_labels+self._eps)
         return ret_labels
@@ -308,14 +317,14 @@ class GraphSeriesData():
         return self._evaluate_any_model(nmd, labels, indices, loss_criterion, 1)
 
     def evaluate_first_order_total_num(self, labels, indices, average_time=None, epsilon=0, loss_criterion=mean_squared_error):
-        if average_time is None:
-            average_time = len(labels) - 1
-        fom = comparison_models.PolynomialRegressionModel(
-            average_time,
-            1,
-            epsilon
+        return self.evaluate_polynomial_regression(
+            labels,
+            indices,
+            average_time=average_time,
+            degree=1,
+            epsilon=epsilon,
+            loss_criterion=loss_criterion
         )
-        return self._evaluate_any_model(fom, labels, indices, loss_criterion, average_time)
 
     def evaluate_uniform_average(self, labels, indices, average_time=None, loss_criterion=mean_squared_error):
         if average_time is None:
@@ -338,6 +347,8 @@ class GraphSeriesData():
     def evaluate_polynomial_regression(self, labels, indices, average_time=None, degree=3, epsilon=0.05, loss_criterion=mean_squared_error):
         if average_time is None:
             average_time = len(labels) - 1
+        if average_time < degree + 1:
+            return ([np.nan],) * (degree + 1)
         prm = comparison_models.PolynomialRegressionModel(
             average_time, degree, epsilon)
         return self._evaluate_any_model(prm, labels, indices, loss_criterion, average_time)

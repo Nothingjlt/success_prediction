@@ -18,7 +18,7 @@ def main():
     #         "general": FeatureMeta(GeneralCalculator, {"gen"}),
     #     }
 
-    trial.run_full_trial("betweenness_centrality")
+    trial.run_full_trial()
 
 
 if __name__ == "__main__":
