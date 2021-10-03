@@ -365,7 +365,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         accuracies_string_list = ["Final result (accuracy):"]
         correlations_string_list = ["Final result (correlation):"]
         maes_string_list = ["Final result (mae):"]
-        for name, mse in accuracies.items():
+        for name, mse in mses.items():
             mses_string_list.append(
                 f"{name.replace('_', ' ')} mse:"
             )
@@ -452,13 +452,13 @@ class NETSCAPETrial(metaclass=ABCMeta):
                                      help="Number of epochs between summary prints")
         self._argparser.add_argument("--log-guard-scale", type=float, default=10,
                                      help="Scale of log guard, used to guard against taking log of 0")
-        self._argparser.add_argument("--l1-lambda", type=float, default=0,
+        self._argparser.add_argument("--l1-lambda", type=float, default=5e-6,
                                      help="L1 norm regularization weight")
         self._argparser.add_argument("--epochs", type=int, default=500,
                                      help="Number of epochs to learn")
-        self._argparser.add_argument("--learning-rate", type=float, default=0.001,
+        self._argparser.add_argument("--learning-rate", type=float, default=1e-3,
                                      help="Learning rate for network")
-        self._argparser.add_argument("--weight-decay", type=float, default=0,
+        self._argparser.add_argument("--weight-decay", type=float, default=3e-2,
                                      help="Weight decay regularization")
         self._argparser.add_argument("--add-labels-of-all-times", action='store_true',
                                      help="Decide whether learned label of each time should be added to features. "

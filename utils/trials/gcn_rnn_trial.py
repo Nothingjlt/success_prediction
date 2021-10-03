@@ -25,17 +25,17 @@ class GCNRNNTrial(NETSCAPETrial):
         return graphs_before_cut[-graphs_cutoff_number:], labels_before_cut[-graphs_cutoff_number:], features_before_cut[-graphs_cutoff_number:]
 
     def _add_specific_parser_arguments(self):
-        self._argparser.add_argument("--graphs-cutoff-number", type=int, default=2,
+        self._argparser.add_argument("--graphs-cutoff-number", type=int, default=3,
                                      help="Number of time steps to take into consideration, used from last to first")
-        self._argparser.add_argument("--gcn-dropout-rate", type=float, default=0.7,
+        self._argparser.add_argument("--gcn-dropout-rate", type=float, default=0.2,
                                      help="Dropout rate for GCN part of the network")
-        self._argparser.add_argument("--lstm-dropout-rate", type=float, default=0,
+        self._argparser.add_argument("--lstm-dropout-rate", type=float, default=0.9,
                                      help="Dropout rate for LSTM part of the network")
-        self._argparser.add_argument("--gcn-hidden-sizes", type=str, default="[10, 10, 10, 10, 10, 10, 10, 10, 10]",
+        self._argparser.add_argument("--gcn-hidden-sizes", type=str, default="[100, 100]",
                                      help="Convolution sizes of GCN layers, evaluated as python-style list")
-        self._argparser.add_argument("--gcn-latent-dim", type=int, default=5,
+        self._argparser.add_argument("--gcn-latent-dim", type=int, default=10,
                                      help="Output dimension of GCN part of the network")
-        self._argparser.add_argument("--lstm-hidden-size", type=int, default=10,
+        self._argparser.add_argument("--lstm-hidden-size", type=int, default=100,
                                      help="Output dimension of LSTM part of the network")
         self._argparser.add_argument("--lstm-num-layers", type=int, default=1,
                                      help="Number of layers in LSTM part of the network")
