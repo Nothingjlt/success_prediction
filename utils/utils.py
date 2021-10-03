@@ -348,7 +348,7 @@ class GraphSeriesData():
         if average_time is None:
             average_time = len(labels) - 1
         if average_time < degree + 1:
-            return ([np.nan],) * (degree + 1)
+            return ([np.nan],) * 4
         prm = comparison_models.PolynomialRegressionModel(
             average_time, degree, epsilon)
         return self._evaluate_any_model(prm, labels, indices, loss_criterion, average_time)
