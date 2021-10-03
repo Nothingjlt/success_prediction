@@ -7,6 +7,7 @@ import sys
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
+# matplotlib.use('TkAgg')
 
 
 MODEL_TYPES = [
@@ -39,47 +40,65 @@ MEASURES = [
     "page_rank"
 ]
 METRICS = [
-    "accuracy",
-    "correlation",
-    "mae",
+    "mses",
+    "accuracies",
+    "correlations",
+    "maes",
+]
+MODELS = [
+    "model_test",
+    "model_train",
+    "model_worst_case"
+]
+COMPARISON_MODELS = [
+    "null_model",
+    "first_order_model",
+    "null_diff_model",
+    "uniform_average",
+    "linear_weighted_average",
+    "square_root_weighted_average",
+    "polynomial_regression",
+    "uniform_periodic_average",
+    "weighted_periodic_average"
 ]
 NUMBER_OF_ITERATIONS = 30
 
 
-def get_zero_model_id(model_names):
-    model_id = -1
-    for model_name in model_names:
-        if model_name.startswith("zero_model_tot_"):
-            model_id = int(model_name.split("_")[-1])
-            break
-    return model_id
+def get_model_ids(model_names):
+    model_ids = {model_name: -1 for model_name in COMPARISON_MODELS}
+    for comp_model in COMPARISON_MODELS:
+        for model_name in model_names:
+            if not model_name.startswith(comp_model):
+                continue
+            contendent_model_id = int(model_name.split("_")[-1])
+            if model_ids[comp_model] < contendent_model_id:
+                model_ids[comp_model] = contendent_model_id
+    return model_ids
 
 
-def get_metric_columns(metric_type, zero_model_id):
-    return [
-        f"model_{metric_type}_0",
-        f"model_train_{metric_type}_0",
-        f"model_worst_case_{metric_type}_0",
-        f"zero_model_tot_{metric_type}_{zero_model_id}"
+def get_metric_columns(metric_type, model_ids):
+    model_metric_columns = [f"{model}_{metric_type}_0" for model in MODELS]
+    comparison_model_metric_columns = [
+        f"{comp_model}_{metric_type}_{model_id}" for (comp_model, model_id) in model_ids.items()
     ]
+    return model_metric_columns + comparison_model_metric_columns
 
 
 def get_metric_keys(metric_type):
-    return [
-        f"model {metric_type}",
-        f"model training set {metric_type}",
-        f"model worst training/test {metric_type}",
-        f"zero model {metric_type}",
-    ]
+    model_keys = [
+        f'{model.replace("_", " ")} {metric_type}' for model in MODELS]
+    comp_model_keys = [
+        f'{comp_model.replace("_", " ")} {metric_type}' for comp_model in COMPARISON_MODELS]
+    return model_keys + comp_model_keys
 
 
 def get_dataset_measure_iter_df(df, dataset, model_type, measure, num_of_iterations):
     dataset_measure_df = df.query(
-        f'dataset=="{dataset}_{model_type}.out.csv" & measure=="{measure}"'
+        f'dataset=="{dataset}_{model_type}" & measure=="{measure}"'
     )
     dataset_measure_iter_df = dataset_measure_df[
         [str(i) for i in range(num_of_iterations)]
-    ].rename(index=dataset_measure_df["metric"])
+    ]
     return dataset_measure_iter_df
 
 
@@ -105,12 +124,10 @@ def get_measure_df(df, measure, filter_potential_overfit=True):
 
 
 def get_metric_df(df, metric):
-    return df.query(f'metric.str.startswith("model_{metric}_")')
+    return df.query(f'metric=="{metric}"')
 
 
-def plot_dataset_measure(dataset_measure_iter_df, dataset, measure, metric, output_path):
-    zero_model_id = get_zero_model_id(dataset_measure_iter_df.index)
-    metric_columns = get_metric_columns(metric, zero_model_id)
+def plot_dataset_measure(dataset_measure_iter_df, dataset, measure, metric, metric_columns, output_path):
     # generate_two_dim_plot(
     #     dataset_measure_iter_df.T,
     #     dataset,
@@ -142,7 +159,7 @@ def clean_dataset_name(dataset):
 
 
 def create_tag(dataset, measure, metric):
-    return f"{clean_dataset_name(dataset)} {measure} {metric}"
+    return f"{dataset} {measure} {metric}"
 
 
 def generate_two_dim_plot(dataset_measure_iter_df, dataset, measure, metric, model_metric_col_name, zero_model_metric_col_name):
@@ -174,51 +191,50 @@ def create_output_file_name(base_output_path, rest_of_path):
 
 def create_dataset_measure_output_file_name(output_path, dataset, measure, metric):
     rest_of_path = os.path.join(
-        clean_dataset_name(dataset),
+        dataset,
         "_".join([measure, metric]) + ".png"
     )
     output_file_name = create_output_file_name(output_path, rest_of_path)
     return output_file_name
 
 
-def create_metric_df_output_file_name(output_path, metric):
-    rest_of_path = f"model_{metric}_vs_null_model.png"
+def create_metric_df_output_file_name(output_path, model, comparison_model, metric):
+    rest_of_path = f"{model}_{metric}_vs_{comparison_model}.png"
     output_file_name = create_output_file_name(output_path, rest_of_path)
     return output_file_name
 
 
-def create_model_performance_df_file_name(output_path, metric):
-    rest_of_path = f"model_{metric.replace(' ', '_')}_performance_compared_to_null_model.png"
+def create_model_performance_df_file_name(output_path, model, comparison_model, metric):
+    rest_of_path = f"{model}_{metric.replace(' ', '_')}_performance_compared_to_{comparison_model}.png"
     output_file_name = create_output_file_name(output_path, rest_of_path)
     return output_file_name
 
 
-def create_dataset_df_file_name(output_path, dataset):
+def create_dataset_df_file_name(output_path, model, comparison_model, dataset):
     rest_of_path = os.path.join(
-        clean_dataset_name(dataset),
-        f'model_performance_in_{dataset}_compared_to_null_model.png'
+        "datasets",
+        dataset,
+        f'{model}_performance_in_{dataset}_compared_to_{comparison_model}.png'
     )
     output_file_name = create_output_file_name(output_path, rest_of_path)
     return output_file_name
 
 
+def create_total_model_comp_df(prefix, output_path):
+    rest_of_path = f'Model_{prefix}_performance_in_all_datasets_compared_to_all_models.png'
+    output_file_name = create_output_file_name(output_path, rest_of_path)
+    return output_file_name
+
+
 def generate_plots(dataset_measure_metric_df, dataset, measure, metric, output_path):
-    try:
-        p = sns.displot(
-            dataset_measure_metric_df,
-            x=metric,
-            hue="model",
-            kde=True
-        )
-    except:
-        p = sns.displot(
-            dataset_measure_metric_df,
-            x=metric,
-            hue="model",
-            kde=True,
-            bins=100
-        )
-    if metric == "mae":
+    p = sns.displot(
+        dataset_measure_metric_df,
+        x=metric,
+        hue="model",
+        kde=True,
+        bins=100
+    )
+    if metric == "maes" or metric == "mses":
         p.fig.axes[0].invert_xaxis()
     tag = create_tag(dataset, measure, metric)
     p.fig.subplots_adjust(top=.9)
@@ -237,59 +253,119 @@ def generate_plots(dataset_measure_metric_df, dataset, measure, metric, output_p
     return
 
 
-def plot_metric_df(metric_df, metric, hue_order, output_path):
+def plot_metric_df(metric_df, model, comparison_model, metric, hue_order, output_path):
     p = sns.displot(
         metric_df,
-        hue='score_against_null_model',
+        hue=f'{comparison_model}_comparison_score',
         x='measure',
         multiple='dodge',
         hue_order=hue_order
     )
-    tag = f'model {metric} performance against null model'
+    tag = f'{model.replace("_", " ")} {metric} performance against {comparison_model.replace("_", " ")}'
     p.fig.subplots_adjust(top=.9)
     p.fig.suptitle(tag)
     p.fig.axes[0].tick_params(axis='x', rotation=90)
     p.fig.canvas.start_event_loop(sys.float_info.min)
-    p.savefig(create_metric_df_output_file_name(output_path, metric))
+    p.savefig(
+        create_metric_df_output_file_name(
+            output_path,
+            model,
+            comparison_model,
+            metric
+        )
+    )
     plt.close()
     return
 
 
-def plot_model_performance_df(model_performance_df, metric, hue_order, output_path):
+def plot_model_performance_df(model_performance_df, model, comparison_model, metric, hue_order, output_path):
     p = sns.catplot(
-        y="dataset",
+        y='dataset',
         col='measure',
-          hue='score_against_null_model',
+        hue=f'{comparison_model}_comparison_score',
         data=model_performance_df,
         kind='count',
         hue_order=hue_order
     )
-    tag = f'model {metric} performance compared to null model'
+    tag = f'{model.replace("_", " ")} {metric} performance compared to {comparison_model.replace("_", " ")}'
     p.fig.subplots_adjust(top=.9)
     p.fig.suptitle(tag)
     # p.set(title=tag)
     # p.fig.axes[0].tick_params(axis='y', rotation=45)
     p.fig.canvas.start_event_loop(sys.float_info.min)
-    p.savefig(create_model_performance_df_file_name(output_path, metric))
+    p.savefig(
+        create_model_performance_df_file_name(
+            output_path,
+            model,
+            comparison_model,
+            metric
+        )
+    )
     plt.close()
     return
 
 
-def plot_dataset_df(dataset_df, dataset, hue_order, output_path):
+def plot_dataset_df(dataset_df, model, comparison_model, dataset, hue_order, output_path):
     p = sns.catplot(
         col="measure",
         row="metric",
-        x='score_against_null_model',
+        x=f'{comparison_model}_comparison_score',
         data=dataset_df,
-        hue='score_against_null_model',
+        hue=f'{comparison_model}_comparison_score',
         kind='count',
         hue_order=hue_order
     )
-    tag = f'model performance in {clean_dataset_name(dataset)} compared to null model'
+    tag = f'{model.replace("_", " ")} performance in {dataset} compared to {comparison_model.replace("_", " ")}'
     p.fig.subplots_adjust(top=.9)
     p.fig.suptitle(tag)
-    p.savefig(create_dataset_df_file_name(output_path, dataset))
+    p.savefig(
+        create_dataset_df_file_name(
+            output_path,
+            model,
+            comparison_model,
+            dataset
+        )
+    )
     plt.close()
+    return
+
+
+def plot_total_model_comp_df(df, hue_order, output_path):
+    for model_type in ["test", "train", "worst_case"]:
+        list_of_comp_models_to_concat = []
+        model_comparison_names = []
+        for comparison_model in COMPARISON_MODELS:
+            comp_model_score = f'{comparison_model}_comparison_score'
+            sliced_df = df.query(f'index.str.contains("model_{model_type}")')[
+                [comp_model_score, 'measure', 'metric']
+            ].rename(columns={comp_model_score: "score"})
+            list_of_comp_models_to_concat.append(sliced_df)
+            model_comparison_names.append(comparison_model)
+        comp_df = pd.concat(
+            list_of_comp_models_to_concat, keys=model_comparison_names
+        ).reset_index(
+        ).rename(
+            columns={0: 'score', "level_0": "comparison_model"}
+        )
+        p = sns.catplot(
+            col='measure',
+            row="comparison_model",
+            x="score",
+            data=comp_df,
+            hue='score',
+            kind='count',
+            hue_order=hue_order
+        )
+        tag = f'Model {model_type.replace("_", " ")} performance in all datasets compared to all models'
+        p.fig.subplots_adjust(top=.95)
+        p.fig.suptitle(tag)
+        p.savefig(
+            create_total_model_comp_df(
+                model_type,
+                output_path
+            )
+        )
+        plt.close()
     return
 
 
@@ -313,54 +389,99 @@ def main():
 
     args = argparser.parse_args()
 
-    df = pd.read_csv(args.file_to_parse)
-    df = df.rename(columns={"Unnamed: 0": "metric"})
+    df = pd.read_csv(args.file_to_parse, index_col=0)
+    # df = df.rename(columns={"Unnamed: 0": "model_metric"})
 
     hue_order = ["won", "lost", "inconclusive"]
 
-    model_performance_df = df.query(
-        'metric=="model_accuracy_0" | metric=="model_correlation_0" | metric=="model_mae_0"'
-    )
-    plot_model_performance_df(
-        model_performance_df,
-        "all metrics",
-        hue_order,
-        args.output_path
-    )
+    plot_total_model_comp_df(df, hue_order, args.output_path)
 
     for metric in METRICS:
-        metric_performance_df = model_performance_df.query(
-            f'metric=="model_{metric}_0"'
-        )
-        plot_model_performance_df(
-            metric_performance_df,
-            metric,
-            hue_order,
-            args.output_path
-        )
+        print(f"plotting {metric} metric")
         metric_df = get_metric_df(df, metric)
-        plot_metric_df(metric_df, metric, hue_order, args.output_path)
+        for model in MODELS:
+            print(f"\tplotting {model} model")
+            model_folder_path = os.path.join(
+                args.output_path,
+                f"{model}_comparison"
+            )
+            model_performance_df = df.query(f'model=="{model}"')
+            metric_performance_df = model_performance_df.query(
+                f'metric=="{metric}"'
+            )
+            for comparison_model in COMPARISON_MODELS:
+                print(f"\t\tplotting {comparison_model} comparison model")
+                plot_model_performance_df(
+                    model_performance_df,
+                    model,
+                    comparison_model,
+                    "all metrics",
+                    hue_order,
+                    os.path.join(
+                        model_folder_path,
+                        "comparisons"
+                    )
+                )
+
+                plot_model_performance_df(
+                    metric_performance_df,
+                    model,
+                    comparison_model,
+                    metric,
+                    hue_order,
+                    os.path.join(
+                        model_folder_path,
+                        "comparisons",
+                        f"compared_vs_{comparison_model}"
+                    )
+                )
+                plot_metric_df(
+                    metric_df,
+                    model,
+                    comparison_model,
+                    metric,
+                    hue_order,
+                    os.path.join(model_folder_path, metric)
+                )
 
     for dataset in DATASETS:
-        print(f"Plotting {clean_dataset_name(dataset)}")
+        print(f"plotting {dataset} dataset")
         dataset_df = model_performance_df.query(
             f'dataset.str.contains("{dataset}")'
         )
-        plot_dataset_df(dataset_df, dataset, hue_order, args.output_path)
-        for measure in MEASURES:
-            dataset_measure_iter_df = get_dataset_measure_iter_df(
-                df,
-                dataset,
-                args.model_type,
-                measure,
-                NUMBER_OF_ITERATIONS
+        for model in MODELS:
+            print(f"\tplotting {model} model")
+            model_folder_path = os.path.join(
+                args.output_path,
+                f"{model}_comparison"
             )
+            for comparison_model in COMPARISON_MODELS:
+                print(f"\t\tplotting {comparison_model} comparison model")
+                plot_dataset_df(
+                    dataset_df,
+                    model,
+                    comparison_model,
+                    dataset,
+                    hue_order,
+                    model_folder_path
+                )
+    for dataset in DATASETS:
+        print(f"Plotting {dataset} dataset")
+        dataset_df = df.query(f'dataset=="{dataset}_{args.model_type}"')
+        model_ids = get_model_ids(dataset_df.index)
+        metric_columns = get_metric_columns(metric, model_ids)
+        for measure in MEASURES:
+            print(f"\tPlotting {measure} measure")
+            dataset_measure_iter_df = dataset_df.query(f'measure=="{measure}"')[
+                [str(i) for i in range(NUMBER_OF_ITERATIONS)]
+            ]
             for metric in METRICS:
                 plot_dataset_measure(
                     dataset_measure_iter_df,
                     dataset,
                     measure,
                     metric,
+                    metric_columns,
                     args.output_path
                 )
 

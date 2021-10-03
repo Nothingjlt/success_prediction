@@ -46,6 +46,24 @@ STATISTICS_RESULTS = namedtuple(
     ]
 )
 
+ALL_MODELS_COMPARISONS = namedtuple(
+    "all_models_comparison",
+    [
+        "null_model_comparison",
+        "first_order_model_comparison",
+        "null_diff_model_comparison",
+        "uniform_average_comparison",
+        "linear_weighted_average_comparison",
+        "square_root_weighted_average_comparison",
+        "polynomial_regression_comparison",
+        "uniform_periodic_average_comparison",
+        "weighted_periodic_average_comparison"
+    ]
+)
+
+
+NULL_MODEL_PREFIX = "null_model"
+
 
 P_VALUE_THRESHOLD = 0.05
 
@@ -53,7 +71,7 @@ P_VALUE_THRESHOLD = 0.05
 def split_file_name_to_measure_and_dataset(file_name):
     for m in MEASURES:
         if file_name.startswith(m):
-            file_name = file_name.replace(m + "_", "")
+            file_name = file_name.replace(m + "_", "").replace(".out.csv", "")
             break
     return m, file_name
 
@@ -72,8 +90,8 @@ def get_statistics(x, y, alternative, should_be_greater=False):
 def get_latest_model_index(df):
     latest_index = 0
     for row in df.index.values:
-        if "zero_model_tot_accuracy_" in row:
-            num = int(row[len("zero_model_tot_accuracy_"):])
+        if f"{NULL_MODEL_PREFIX}_accuracies_" in row:
+            num = int(row[len(f"{NULL_MODEL_PREFIX}_accuracies_"):])
             if num > latest_index:
                 latest_index = num
     return latest_index
@@ -90,19 +108,51 @@ def get_metric_statistics(metric_name, x_name, y_name, df, alternative, should_b
     return d
 
 
-def get_worst_case_statistics(metric_name, x_name_one, x_name_two, y_name, df, alternative, should_be_greater):
-    d = {}
+def get_worst_case_model(orig_df, clean_df, model_test_prefix, model_train_prefix, worst_case_prefix):
+    clean_df.loc[f"{worst_case_prefix}_mses_0"] = get_worst_case_metric(
+        f"{model_test_prefix}_mses_0",
+        f"{model_train_prefix}_mses_0",
+        clean_df,
+        True
+    )
+    orig_df.loc[f"{worst_case_prefix}_mses_0"] = clean_df.loc[f"{worst_case_prefix}_mses_0"]
+    orig_df.loc[f"{worst_case_prefix}_mses_0", "metric"] = "mses"
+    clean_df.loc[f"{worst_case_prefix}_accuracies_0"] = get_worst_case_metric(
+        f"{model_test_prefix}_accuracies_0",
+        f"{model_train_prefix}_accuracies_0",
+        clean_df,
+        False
+    )
+    orig_df.loc[f"{worst_case_prefix}_accuracies_0"] = clean_df.loc[f"{worst_case_prefix}_accuracies_0"]
+    orig_df.loc[f"{worst_case_prefix}_accuracies_0", "metric"] = "accuracies"
+    clean_df.loc[f"{worst_case_prefix}_correlations_0"] = get_worst_case_metric(
+        f"{model_test_prefix}_correlations_0",
+        f"{model_train_prefix}_correlations_0",
+        clean_df,
+        False
+    )
+    orig_df.loc[f"{worst_case_prefix}_correlations_0"] = clean_df.loc[f"{worst_case_prefix}_correlations_0"]
+    orig_df.loc[f"{worst_case_prefix}_correlations_0", "metric"] = "correlations"
+    clean_df.loc[f"{worst_case_prefix}_maes_0"] = get_worst_case_metric(
+        f"{model_test_prefix}_maes_0",
+        f"{model_train_prefix}_maes_0",
+        clean_df,
+        True
+    )
+    orig_df.loc[f"{worst_case_prefix}_maes_0"] = clean_df.loc[f"{worst_case_prefix}_maes_0"]
+    orig_df.loc[f"{worst_case_prefix}_maes_0", "metric"] = "maes"
+
+    orig_df.loc[orig_df.index.str.contains(f"{worst_case_prefix}"), "model"] = "model_worst_case"
+
+    return orig_df, clean_df
+
+
+def get_worst_case_metric(x_name_one, x_name_two, df, should_be_greater):
     if should_be_greater:
         curr_df = df.loc[[x_name_one, x_name_two]].max(axis=0)
     else:
         curr_df = df.loc[[x_name_one, x_name_two]].min(axis=0)
-    d[metric_name] = get_statistics(
-        curr_df,
-        df.loc[y_name],
-        alternative=alternative,
-        should_be_greater=should_be_greater
-    )
-    return d, curr_df
+    return curr_df
 
 
 def add_values_to_df(df, line_id, col_id, value):
@@ -110,214 +160,187 @@ def add_values_to_df(df, line_id, col_id, value):
     return df
 
 
-def prepare_file_df(root, file_name, add_train_results=False):
+def update_model_comparison(clean_df, base_model_prefix, comparison_model_prefix, models_index):
+    mse_alternative = "two-sided"
     acc_alternative = "two-sided"
     corr_alternative = "two-sided"
     mae_alternative = "two-sided"
+    statistics = {}
+    statistics.update(
+        get_metric_statistics(
+            "mses_0",
+            f"{base_model_prefix}_mses_0",
+            f"{comparison_model_prefix}_mses_{models_index}",
+            clean_df,
+            mse_alternative,
+            True
+        )
+    )
+    statistics.update(
+        get_metric_statistics(
+            "accuracies_0",
+            f"{base_model_prefix}_accuracies_0",
+            f"{comparison_model_prefix}_accuracies_{models_index}",
+            clean_df,
+            acc_alternative,
+            False
+        )
+    )
+    statistics.update(
+        get_metric_statistics(
+            "correlations_0",
+            f"{base_model_prefix}_correlations_0",
+            f"{comparison_model_prefix}_correlations_{models_index}",
+            clean_df,
+            corr_alternative,
+            False
+        )
+    )
+    statistics.update(
+        get_metric_statistics(
+            "maes_0",
+            f"{base_model_prefix}_maes_0",
+            f"{comparison_model_prefix}_maes_{models_index}",
+            clean_df,
+            mae_alternative,
+            True
+        )
+    )
+    return statistics
+
+
+def compare_results(clean_df, base_model_prefix, models_index):
+    null_model_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        NULL_MODEL_PREFIX,
+        models_index
+    )
+    first_order_model_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "first_order_model",
+        0
+    )
+    null_diff_model_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "null_diff_model",
+        models_index
+    )
+    uniform_average_model_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "uniform_average",
+        0
+    )
+    linear_weighted_average_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "linear_weighted_average",
+        0
+    )
+    square_root_weighted_average_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "square_root_weighted_average",
+        0
+    )
+    polynomial_regression_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "polynomial_regression",
+        0
+    )
+    uniform_periodic_average_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "uniform_periodic_average",
+        0
+    )
+    weighted_periodic_average_comparison = update_model_comparison(
+        clean_df,
+        base_model_prefix,
+        "weighted_periodic_average",
+        0
+    )
+
+    all_models_comparison = ALL_MODELS_COMPARISONS(
+        null_model_comparison,
+        first_order_model_comparison,
+        null_diff_model_comparison,
+        uniform_average_model_comparison,
+        linear_weighted_average_comparison,
+        square_root_weighted_average_comparison,
+        polynomial_regression_comparison,
+        uniform_periodic_average_comparison,
+        weighted_periodic_average_comparison
+    )
+
+    return all_models_comparison
+
+
+def decide_if_model_won(statistics):
+    if statistics.wilcoxon_pvalue > P_VALUE_THRESHOLD:
+        comparison_score = "inconclusive"
+    else:
+        if statistics.perc_improvement > 0:
+            comparison_score = "won"
+        else:
+            comparison_score = "lost"
+    return comparison_score
+
+
+def add_comparison_to_df(df, base_model_prefix, comparison_results):
+    for comparison_name, comparison_result in comparison_results._asdict().items():
+        for metric, statistics in comparison_result.items():
+            for statistic_name, statistic_value in statistics._asdict().items():
+                df = add_values_to_df(df, f"{base_model_prefix}_{metric}", f"{comparison_name}_{statistic_name}", statistic_value)
+            comparison_score = decide_if_model_won(statistics)            
+            df = add_values_to_df(df, f"{base_model_prefix}_{metric}", f"{comparison_name}_score", comparison_score)
+    return df
+
+def prepare_file_df(root, file_name, add_train_results=False):
     df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
     models_index = get_latest_model_index(df)
     statistics = {}
     train_statistics = {}
     worst_case_statistics = {}
-    statistics.update(
-        get_metric_statistics(
-            "accuracy_0",
-            "model_accuracy_0",
-            f"zero_model_tot_accuracy_{models_index}",
-            df,
-            acc_alternative,
-            False
-        )
-    )
-    statistics.update(
-        get_metric_statistics(
-            "correlation_0",
-            "model_correlation_0",
-            f"zero_model_tot_correlation_{models_index}",
-            df,
-            corr_alternative,
-            False
-        )
-    )
-    statistics.update(
-        get_metric_statistics(
-            "mae_0",
-            "model_mae_0",
-            f"zero_model_tot_mae_{models_index}",
-            df,
-            mae_alternative,
-            True
-        )
+    output_df = df.drop(['metric', 'model'], axis=1)
+
+    model_test_comparison_results = compare_results(
+        output_df,
+        "model_test",
+        models_index
     )
     if add_train_results:
-        train_statistics.update(
-            get_metric_statistics(
-                "accuracy_0",
-                "model_train_accuracy_0",
-                f"zero_model_tot_accuracy_{models_index}",
-                df,
-                acc_alternative,
-                False
-            )
+        model_train_comparison_results = compare_results(
+            output_df,
+            "model_train",
+            models_index
         )
-        d, worst_case_df = get_worst_case_statistics(
-            "accuracy_0",
-            "model_accuracy_0",
-            "model_train_accuracy_0",
-            f"zero_model_tot_accuracy_{models_index}",
+        df, output_df_with_worst_case = get_worst_case_model(
             df,
-            acc_alternative,
-            False
+            output_df,
+            "model_test",
+            "model_train",
+            "model_worst_case"
         )
-        df.loc[f"model_worst_case_accuracy_0"] = worst_case_df
-        worst_case_statistics.update(d)
-        train_statistics.update(
-            get_metric_statistics(
-                "correlation_0",
-                "model_train_correlation_0",
-                f"zero_model_tot_correlation_{models_index}",
-                df,
-                corr_alternative,
-                False
-            )
+        model_worst_case_comparison_results = compare_results(
+            output_df_with_worst_case,
+            "model_worst_case",
+            models_index
         )
-        d, worst_case_df = get_worst_case_statistics(
-            "correlation_0",
-            "model_correlation_0",
-            "model_train_correlation_0",
-            f"zero_model_tot_correlation_{models_index}",
-            df,
-            corr_alternative,
-            False
-        )
-        df.loc[f"model_worst_case_correlation_0"] = worst_case_df
-        worst_case_statistics.update(d)
-        train_statistics.update(
-            get_metric_statistics(
-                "mae_0",
-                "model_train_mae_0",
-                f"zero_model_tot_mae_{models_index}",
-                df,
-                mae_alternative,
-                True
-            )
-        )
-        d, worst_case_df = get_worst_case_statistics(
-            "mae_0",
-            "model_mae_0",
-            "model_train_mae_0",
-            f"zero_model_tot_mae_{models_index}",
-            df,
-            mae_alternative,
-            True
-        )
-        df.loc[f"model_worst_case_mae_0"] = worst_case_df
-        worst_case_statistics.update(d)
-        df = df.loc[[item for sublist in [
-            [f"model_{k}", f"model_train_{k}", f"model_worst_case_{k}", f"zero_model_tot_{k[:-1] + str(models_index)}"] for k in statistics.keys()] for item in sublist]]
-    else:
-        df = df.loc[[item for sublist in [
-            [f"model_{k}", f"zero_model_tot_{k[:-1] + str(models_index)}"] for k in statistics.keys()] for item in sublist]]
-    for k, v in statistics.items():
-        zero_model_index = k.replace('_0', f"_{models_index}")
-        df = add_values_to_df(
-            df, f"model_{k}", "percentage_improvement", v.perc_improvement)
-        df = add_values_to_df(
-            df, f"model_{k}", "two_sided_paired_t_value", v.ttest_statistic)
-        df = add_values_to_df(
-            df, f"model_{k}", "two_sided_paired_t_test_pvalue", v.ttest_pvalue)
-        df = add_values_to_df(
-            df, f"model_{k}", "two_sided_wilcoxon_statistic", v.wilcoxon_statistic)
-        df = add_values_to_df(
-            df, f"model_{k}", "two_sided_wilcoxon_pvalue", v.wilcoxon_pvalue)
-
-        model_won = v.perc_improvement > 0 and v.wilcoxon_pvalue < P_VALUE_THRESHOLD
-        model_lost = v.perc_improvement < 0 and v.wilcoxon_pvalue < P_VALUE_THRESHOLD
-        if model_won:
-            model_score_against_null_model = "won"
-        elif model_lost:
-            model_score_against_null_model = "lost"
-        else:
-            model_score_against_null_model = "inconclusive"
-        df = add_values_to_df(
-            df, f"model_{k}", "score_against_null_model", model_score_against_null_model)
-
-        if add_train_results:
-            train_stats = train_statistics[k]
-            df = add_values_to_df(
-                df, f"model_train_{k}", "percentage_improvement", train_stats.perc_improvement)
-            df = add_values_to_df(
-                df, f"model_train_{k}", "two_sided_paired_t_value", train_stats.ttest_statistic)
-            df = add_values_to_df(
-                df, f"model_train_{k}", "two_sided_paired_t_test_pvalue", train_stats.ttest_pvalue)
-            df = add_values_to_df(
-                df, f"model_train_{k}", "two_sided_wilcoxon_statistic", train_stats.wilcoxon_statistic)
-            df = add_values_to_df(
-                df, f"model_train_{k}", "two_sided_wilcoxon_pvalue", train_stats.wilcoxon_pvalue)
-
-            worst_case_stats = worst_case_statistics[k]
-            df = add_values_to_df(
-                df, f"model_worst_case_{k}", "percentage_improvement", worst_case_stats.perc_improvement)
-            df = add_values_to_df(
-                df, f"model_worst_case_{k}", "two_sided_paired_t_value", worst_case_stats.ttest_statistic)
-            df = add_values_to_df(
-                df, f"model_worst_case_{k}", "two_sided_paired_t_test_pvalue", worst_case_stats.ttest_pvalue)
-            df = add_values_to_df(
-                df, f"model_worst_case_{k}", "two_sided_wilcoxon_statistic", worst_case_stats.wilcoxon_statistic)
-            df = add_values_to_df(
-                df, f"model_worst_case_{k}", "two_sided_wilcoxon_pvalue", worst_case_stats.wilcoxon_pvalue)
-
-            model_train_won = train_stats.perc_improvement > 0 and train_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
-            model_train_lost = train_stats.perc_improvement < 0 and train_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
-            model_worst_case_won = worst_case_stats.perc_improvement > 0 and worst_case_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
-            model_worst_case_lost = worst_case_stats.perc_improvement < 0 and worst_case_stats.wilcoxon_pvalue < P_VALUE_THRESHOLD
-
-            if model_train_won:
-                model_train_score_against_null_model = "won"
-            elif model_train_lost:
-                model_train_score_against_null_model = "lost"
-            else:
-                model_train_score_against_null_model = "inconclusive"
-
-            if model_worst_case_won:
-                model_worst_case_score_against_null_model = "won"
-            elif model_worst_case_lost:
-                model_worst_case_score_against_null_model = "lost"
-            else:
-                model_worst_case_score_against_null_model = "inconclusive"
-
-            df = add_values_to_df(
-                df, f"model_train_{k}", "score_against_null_model", model_train_score_against_null_model)
-            df = add_values_to_df(
-                df, f"model_worst_case_{k}", "score_against_null_model", model_worst_case_score_against_null_model)
-
-            potential_overfit = False
-            if model_train_won and not model_won:
-                potential_overfit = True
-
-            df = add_values_to_df(
-                df, f"model_{k}", "potential_overfit", potential_overfit)
-            df = add_values_to_df(
-                df, f"model_train_{k}", "potential_overfit", potential_overfit)
-            df = add_values_to_df(
-                df, f"model_worst_case_{k}", "potential_overfit", potential_overfit)
-
-        else:
-            df = add_values_to_df(
-                df, f"zero_model_tot_{zero_model_index}", "percentage_improvement", v.perc_improvement)
-            df = add_values_to_df(
-                df, f"zero_model_tot_{zero_model_index}", "two_sided_paired_t_value", v.ttest_statistic)
-            df = add_values_to_df(
-                df, f"zero_model_tot_{zero_model_index}", "two_sided_paired_t_test_pvalue", v.ttest_pvalue)
-            df = add_values_to_df(
-                df, f"zero_model_tot_{zero_model_index}", "two_sided_wilcoxon_statistic", v.wilcoxon_statistic)
-            df = add_values_to_df(
-                df, f"zero_model_tot_{zero_model_index}", "two_sided_wilcoxon_pvalue", v.wilcoxon_pvalue)
-    df.fillna('', inplace=True)
+        output_df = add_comparison_to_df(output_df, "model_train", model_train_comparison_results)
+        output_df = add_comparison_to_df(output_df_with_worst_case, "model_worst_case", model_worst_case_comparison_results)
+    output_df = add_comparison_to_df(output_df, "model_test", model_test_comparison_results)
+    output_df.fillna('', inplace=True)
     measure, dataset = split_file_name_to_measure_and_dataset(file_name)
-    df["measure"] = measure
-    df["dataset"] = dataset
-    return df
+    output_df["measure"] = measure
+    output_df["dataset"] = dataset
+    output_df["metric"] = df["metric"]
+    output_df["model"] = df["model"]
+    return output_df
 
 
 def analyze_GCNRNN_files_in_outdir(
@@ -342,8 +365,8 @@ def main():
                            help="path to output file")
     argparser.add_argument('folder_to_iterate', type=str,
                            help="path to folder to recurse and parse")
-    argparser.add_argument('--add_train_results', type=bool,
-                           help="Decide whether to print train results", nargs='?', default=False, const=True)
+    argparser.add_argument('--add_train_results', action='store_true',
+                           help="Decide whether to print train results")
     args = argparser.parse_args()
     analyze_GCNRNN_files_in_outdir(
         args.folder_to_iterate, args.output_file_name, args.add_train_results)
