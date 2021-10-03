@@ -1,5 +1,5 @@
 {
-    "number_of_iterations_per_test": {
+    "num_iterations": {
         "_type": "choice",
         "_value": [
             1
