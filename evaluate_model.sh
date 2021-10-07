@@ -16,19 +16,19 @@ for (( i=0;i<$ELEMENTS;i++)); do
     echo "Evaluating ${DATASET[0]}/${DATASET[1]}"
     echo "Running python ./run_gcn_rnn_trial.py --seed 1 --data-folder-name ${DATASET[0]} --data-name ${DATASET[1]} --learned-label all_labels --num-iterations 30 $2"
     python ./run_gcn_rnn_trial.py --seed 1 --data-folder-name ${DATASET[0]} --data-name ${DATASET[1]} --learned-label all_labels --num-iterations 30 $2
-    echo "Moving output data to model folder"
-    echo "Running mv -f ./out/${DATASET[0]} ./out/$1/${DATASET[0]}"
-    mv -f ./out/${DATASET[0]} ./out/$1/${DATASET[0]}
+    # echo "Moving output data to model folder"
+    # echo "Running mv -f ./out/${DATASET[0]} ./out/$1/${DATASET[0]}"
+    # mv -f ./out/${DATASET[0]} ./out/$1/${DATASET[0]}
     # echo ${DATASET[0]}
     # echo ${DATASET[1]}
 done
 
 echo "Generating output csv file"
-echo "Running python ./utils/general/output_file_reader.py ./out/$1/$1_summary.csv ./out/$1 --add_train_results"
-python ./utils/general/output_file_reader.py ./out/$1/$1_summary.csv ./out/$1 --add_train_results
+echo "Running python ./utils/general/output_file_reader.py ./out/$1_summary.csv ./out --add_train_results"
+python ./utils/general/output_file_reader.py ./out/$1_summary.csv ./out --add_train_results
 
 echo "Generating plots"
-echo "Running python ./utils/general/plots_from_csv_summary.py ./out/$1/$1_summary.csv GCNRNN ./out/$1/plots"
-python ./utils/general/plots_from_csv_summary.py ./out/$1/$1_summary.csv GCNRNN ./out/$1/plots
+echo "Running python ./utils/general/plots_from_csv_summary.py ./out/$1_summary.csv GCNRNN ./out/plots"
+python ./utils/general/plots_from_csv_summary.py ./out/$1_summary.csv GCNRNN ./out/plots
 
 echo "Done"
