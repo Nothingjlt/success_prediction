@@ -1,15 +1,10 @@
-from numpy.core.numeric import correlate
-from utils.models.comparison_models import FirstOrderDiffModel
 import torch
 import pickle
 import numpy as np
-import pandas as pd
-import os
-import errno
 from lib.graph_measures.features_meta.features_meta import *
 from utils.utils import GraphSeriesData
+from utils.general.trial_summary import TrialSummary
 from abc import ABCMeta, abstractmethod
-from collections import namedtuple
 
 import argparse
 
@@ -17,31 +12,6 @@ import nni
 
 
 class NETSCAPETrial(metaclass=ABCMeta):
-    _model_evaluation_results_type = namedtuple(
-        "MODEL_RESULTS",
-        [
-            "mses",
-            "accuracies",
-            "correlations",
-            "maes"
-        ]
-    )
-    _all_results_type = namedtuple(
-        "Results",
-        [
-            "model_test",
-            "model_train",
-            "null_model",
-            "first_order_model",
-            "null_diff_model",
-            "uniform_average",
-            "linear_weighted_average",
-            "square_root_weighted_average",
-            "polynomial_regression",
-            "uniform_periodic_average",
-            "weighted_periodic_average"
-        ]
-    )
 
     def __init__(self, parameters: dict = {}, seed: int = None, out_folder: str = "out"):
         seed_to_set = np.random.randint(0, 2 ^ 32) if seed is None else seed
@@ -204,7 +174,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         model = self._get_model(graph_data)
         model.train()
         with torch.no_grad():
-            model_test_evaluation = self._model_evaluation_results_type(
+            model_test_evaluation = TrialSummary.model_evaluation_results_type(
                 *model.evaluate(
                     "test",
                     evaluate_accuracy=True,
@@ -219,7 +189,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 maes=[model_test_evaluation.maes]
             )
 
-            model_train_evaluation = self._model_evaluation_results_type(
+            model_train_evaluation = TrialSummary.model_evaluation_results_type(
                 *model.evaluate(
                     "train",
                     evaluate_accuracy=True,
@@ -234,8 +204,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 maes=[model_train_evaluation.maes]
             )
 
-            comparison_graph_data = GraphSeriesData(
-                self._params["log_guard_scale"])
+            comparison_graph_data = GraphSeriesData(log_guard_scale=0)
             comparison_graph_data.load_data(
                 graphs_orig,
                 graph_features_orig,
@@ -243,38 +212,38 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 user_idx_to_node_id=self._idx_to_node_id,
                 learned_label=learned_label,
                 labels_list=labels_orig,
-                learn_logs=self._should_learn_logs(),
-                learn_diffs=self._should_learn_diff(),
+                learn_logs=False,
+                learn_diffs=False,
                 train=train,
                 test=test,
                 validation=validation
             )
 
-            null_model_evaluation = self._model_evaluation_results_type(
+            null_model_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_null_model_total_num(labels_orig, "test")
             )
-            first_order_model_evaluation = self._model_evaluation_results_type(
+            first_order_model_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_first_order_total_num(labels_orig, "test")
             )
-            null_model_diff_evaluation = self._model_evaluation_results_type(
+            null_model_diff_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_null_model_diff(labels_orig, "test")
             )
-            uniform_average_evaluation = self._model_evaluation_results_type(
+            uniform_average_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_uniform_average(labels_orig, "test")
             )
-            linear_weighted_average_evaluation = self._model_evaluation_results_type(
+            linear_weighted_average_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_linear_weighted_average(labels_orig, "test")
             )
-            square_root_weighted_average_evaluation = self._model_evaluation_results_type(
+            square_root_weighted_average_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_square_root_weighted_average(labels_orig, "test")
             )
-            polynomial_regression_evaluation = self._model_evaluation_results_type(
+            polynomial_regression_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_polynomial_regression(labels_orig, "test")
             )
-            uniform_periodic_average_evaluation = self._model_evaluation_results_type(
+            uniform_periodic_average_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_uniform_periodic_average(labels_orig, "test")
             )
-            weighted_periodic_average_evaluation = self._model_evaluation_results_type(
+            weighted_periodic_average_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_weighted_periodic_average(labels_orig, "test")
             )
 
@@ -284,7 +253,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 null_model_evaluation.accuracies[-1]
             )
 
-        all_results = self._all_results_type(
+        all_results = TrialSummary.all_results_type(
             model_test_evaluation,
             model_train_evaluation,
             null_model_evaluation,
@@ -438,8 +407,8 @@ class NETSCAPETrial(metaclass=ABCMeta):
         return results
 
     def _add_general_parser_arguments(self):
-        self._argparser.add_argument(
-            "--nni", action='store_true', help="Should only be used when run with nni.")
+        self._argparser.add_argument("--nni", action='store_true',
+                                     help="Should only be used when run with nni.")
         self._argparser.add_argument("--seed", type=int,
                                      help="Optional random seed for run")
         self._argparser.add_argument("--data-folder-name", type=str, default="reality_mining",
@@ -512,40 +481,3 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 self.iterate_test()
         else:
             self.iterate_test()
-
-
-class TrialSummary:
-    def __init__(self, output_file_name):
-        self._output_file_name = output_file_name+".csv"
-
-    def write_output(self, results):
-        df = pd.DataFrame()
-        for single_run_result_index, single_run_result in enumerate(results):
-            for model_name, model_evaluation in single_run_result._asdict().items():
-                for metric_name, metric_list in model_evaluation._asdict().items():
-                    for single_metric_index, single_metric in enumerate(metric_list):
-                        df.at[
-                            f"{model_name}_{metric_name}_{single_metric_index}",
-                            single_run_result_index
-                        ] = single_metric
-        for model_name, model_evaluation in single_run_result._asdict().items():
-            for metric_name, metric_list in model_evaluation._asdict().items():
-                for single_metric_index, single_metric in enumerate(metric_list):
-                    df.at[
-                        f"{model_name}_{metric_name}_{single_metric_index}",
-                        "metric"
-                    ] = metric_name
-                    df.at[
-                        f"{model_name}_{metric_name}_{single_metric_index}",
-                        "model"
-                    ] = model_name
-        if not os.path.exists(os.path.dirname(self._output_file_name)):
-            try:
-                os.makedirs(os.path.dirname(self._output_file_name))
-            except OSError as exc:  # Guard against race condition
-                if exc.errno != errno.EEXIST:
-                    raise
-        with open(self._output_file_name, 'w') as output_file:
-            output_file.write(df.to_csv(sep=",").replace('\r\n', '\n'))
-        with open(self._output_file_name, 'r') as output_file:
-            print(output_file.read())
