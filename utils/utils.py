@@ -234,9 +234,6 @@ class GraphSeriesData():
         return stacked_labels
 
     def _calc_criterion_np(self, predictions_np, true_labels_np, criterion, loss_criterion=mean_squared_error):
-        if self._learn_logs:
-            predictions_np = np.exp(predictions_np)
-            true_labels_np = np.exp(true_labels_np)
         if criterion == 'r2_score':
             return r2_score(predictions_np, true_labels_np)
         if criterion == 'correlation':
@@ -246,19 +243,22 @@ class GraphSeriesData():
         if criterion == 'loss':
             return loss_criterion(predictions_np, true_labels_np)
 
-    def _calc_criterion(self, predictions, true_labels, criterion):
+    def _prepare_and_calc_criterion(self, predictions, true_labels, criterion):
+        if self._learn_logs:
+            predictions = torch.exp(predictions) # TODO consider adding - self._eps here too
+            true_labels = torch.exp(true_labels)-self._eps
         predictions_np = predictions.cpu().detach().numpy()
         true_labels_np = true_labels.cpu().detach().numpy()
         return self._calc_criterion_np(predictions_np, true_labels_np, criterion)
 
     def evaluate_r2_score(self, predictions, true_labels):
-        return self._calc_criterion(predictions, true_labels, 'r2_score')
+        return self._prepare_and_calc_criterion(predictions, true_labels, 'r2_score')
 
     def evaluate_correlation(self, predictions, true_labels):
-        return self._calc_criterion(predictions, true_labels, 'correlation')
+        return self._prepare_and_calc_criterion(predictions, true_labels, 'correlation')
 
     def evaluate_mae(self, predictions, true_labels):
-        return self._calc_criterion(predictions, true_labels, 'mae')
+        return self._prepare_and_calc_criterion(predictions, true_labels, 'mae')
 
     def _evaluate_log_r2_score(self, predictions, true_labels):
         predictions_log = torch.log(predictions)
