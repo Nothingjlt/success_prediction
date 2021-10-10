@@ -5,24 +5,12 @@ from scipy import stats
 import os
 from collections import namedtuple
 
-# ACC_REGEX = "Final result: model tot accuracy: \[(?P<model_tot_acc>.*?)\], zero_model_tot_accuracy: \[(?P<zero_model_tot_acc>.*?)\], first order tot accuracy: \[(?P<first_order_model_tot_acc>.*?)\], zero model diff accuracy: \[(?P<zero_model_diff_acc>.*?)\], first order diff accuracy: \[(?P<first_order_model_diff_acc>.*?)\]"
-# COR_REGEX = "Final result: model tot correlation: \[(?P<model_tot_acc>.*?)\], zero_model_tot_correlation: \[(?P<zero_model_tot_acc>.*?)\], first order tot correlation: \[(?P<first_order_model_tot_acc>.*?)\], zero model diff correlation: \[(?P<zero_model_diff_acc>.*?)\], first order diff correlation: \[(?P<first_order_model_diff_acc>.*?)\]"
-# MAE_REGEX = "Final result: model tot mae: \[(?P<model_tot_acc>.*?)\], zero_model_tot_mae: \[(?P<zero_model_tot_acc>.*?)\], first order tot mae: \[(?P<first_order_model_tot_acc>.*?)\], zero model diff mae: \[(?P<zero_model_diff_acc>.*?)\], first order diff mae: \[(?P<first_order_model_diff_acc>.*?)\]"
 
-# COL_NAMES = ['models_acc', 'null_models_acc', 'first_order_models_acc', 'null_models_diff_add', 'first_order_models_diff_acc', 'models_corr', 'null_models_corr', 'first_orders_model_corr',
-#              'null_models_diff_corr', 'first_order_models_diff_corr', 'models_mae', 'null_models_mae', 'first_orders_model_mae', 'null_models_diff_mae', 'first_order_models_diff_mae']
-
-
-# def read_from_file(file_name):
-#     raw_string = open(file_name, 'r').read()
-#     accuracies = re.findall(ACC_REGEX, raw_string)
-#     correlations = re.findall(COR_REGEX, raw_string)
-#     maes = re.findall(MAE_REGEX, raw_string)
-#     csv_type_strings = []
-#     for l in zip(accuracies, correlations, maes):
-#         print('\t'.join(sum(l, ())))
-#         csv_type_strings.append('\t'.join(sum(l, ())))
-#     open(file_name+".csv", 'w').write("\n".join(csv_type_strings))
+# Model_type_name: (file_name_representation_of_model_type, should_add_comparisons_to_model)
+MODEL_TYPE_CHOICES = {
+    "GCNRNN": ("GCNRNN", True),
+    "COMPARISON": ("comparison_data", False)
+}
 
 
 MEASURES = [
@@ -132,7 +120,10 @@ def get_worst_case_model(orig_df, clean_df, model_test_prefix, model_train_prefi
         False
     )
     orig_df.loc[f"{worst_case_prefix}_correlations_0"] = clean_df.loc[f"{worst_case_prefix}_correlations_0"]
-    orig_df.loc[f"{worst_case_prefix}_correlations_0", "metric"] = "correlations"
+    orig_df.loc[
+        f"{worst_case_prefix}_correlations_0",
+        "metric"
+    ] = "correlations"
     clean_df.loc[f"{worst_case_prefix}_maes_0"] = get_worst_case_metric(
         f"{model_test_prefix}_maes_0",
         f"{model_train_prefix}_maes_0",
@@ -142,7 +133,10 @@ def get_worst_case_model(orig_df, clean_df, model_test_prefix, model_train_prefi
     orig_df.loc[f"{worst_case_prefix}_maes_0"] = clean_df.loc[f"{worst_case_prefix}_maes_0"]
     orig_df.loc[f"{worst_case_prefix}_maes_0", "metric"] = "maes"
 
-    orig_df.loc[orig_df.index.str.contains(f"{worst_case_prefix}"), "model"] = "model_worst_case"
+    orig_df.loc[
+        orig_df.index.str.contains(f"{worst_case_prefix}"),
+        "model"
+    ] = "model_worst_case"
 
     return orig_df, clean_df
 
@@ -226,7 +220,7 @@ def compare_results(clean_df, base_model_prefix, models_index):
         clean_df,
         base_model_prefix,
         "null_diff_model",
-        models_index
+        0
     )
     uniform_average_model_comparison = update_model_comparison(
         clean_df,
@@ -295,19 +289,25 @@ def add_comparison_to_df(df, base_model_prefix, comparison_results):
     for comparison_name, comparison_result in comparison_results._asdict().items():
         for metric, statistics in comparison_result.items():
             for statistic_name, statistic_value in statistics._asdict().items():
-                df = add_values_to_df(df, f"{base_model_prefix}_{metric}", f"{comparison_name}_{statistic_name}", statistic_value)
-            comparison_score = decide_if_model_won(statistics)            
-            df = add_values_to_df(df, f"{base_model_prefix}_{metric}", f"{comparison_name}_score", comparison_score)
+                df = add_values_to_df(
+                    df,
+                    f"{base_model_prefix}_{metric}",
+                    f"{comparison_name}_{statistic_name}",
+                    statistic_value
+                )
+            comparison_score = decide_if_model_won(statistics)
+            df = add_values_to_df(
+                df,
+                f"{base_model_prefix}_{metric}",
+                f"{comparison_name}_score",
+                comparison_score
+            )
     return df
 
-def prepare_file_df(root, file_name, add_train_results=False):
-    df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
-    models_index = get_latest_model_index(df)
-    statistics = {}
-    train_statistics = {}
-    worst_case_statistics = {}
-    output_df = df.drop(['metric', 'model'], axis=1)
 
+def compare_to_comparison_models(df, add_train_results):
+    models_index = get_latest_model_index(df)
+    output_df = df.drop(['metric', 'model'], axis=1)
     model_test_comparison_results = compare_results(
         output_df,
         "model_test",
@@ -331,28 +331,55 @@ def prepare_file_df(root, file_name, add_train_results=False):
             "model_worst_case",
             models_index
         )
-        output_df = add_comparison_to_df(output_df, "model_train", model_train_comparison_results)
-        output_df = add_comparison_to_df(output_df_with_worst_case, "model_worst_case", model_worst_case_comparison_results)
-    output_df = add_comparison_to_df(output_df, "model_test", model_test_comparison_results)
+        output_df = add_comparison_to_df(
+            output_df_with_worst_case,
+            "model_worst_case",
+            model_worst_case_comparison_results
+        )
+        output_df = add_comparison_to_df(
+            output_df,
+            "model_train",
+            model_train_comparison_results
+        )
+    output_df = add_comparison_to_df(
+        output_df,
+        "model_test",
+        model_test_comparison_results
+    )
     output_df.fillna('', inplace=True)
+
+    return output_df
+
+
+def prepare_file_df(root, file_name, add_comparisons=True, add_train_results=False):
+    df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
+
+    if add_comparisons:
+        output_df = compare_to_comparison_models(df, add_train_results)
+    else:
+        output_df = df
+
     measure, dataset = split_file_name_to_measure_and_dataset(file_name)
     output_df["measure"] = measure
     output_df["dataset"] = dataset
     output_df["metric"] = df["metric"]
     output_df["model"] = df["model"]
+
     return output_df
 
 
-def analyze_GCNRNN_files_in_outdir(
-    out_files_dir: str = r"C:\Users\nothi\Google Drive\Studies\Courses\Thesis\from_dsi\success_prediction\out",
-    output_file_name: str = r"C:\Users\nothi\Google Drive\Studies\Courses\Thesis\research proposal\all_summary_raw_data_df.txt",
+def analyze_files_in_outdir(
+    out_files_dir: str,
+    output_file_name: str,
+    model_type: str,
     add_train_results: bool = False
 ):
     master_df = pd.DataFrame()
     for r, d, files in os.walk(out_files_dir):
         for f in files:
-            if f.endswith("_GCNRNN.out.csv"):
-                df = prepare_file_df(r, f, add_train_results)
+            if f.endswith(f"_{MODEL_TYPE_CHOICES[model_type][0]}.out.csv"):
+                df = prepare_file_df(
+                    r, f, add_comparisons=MODEL_TYPE_CHOICES[model_type][1], add_train_results=add_train_results)
                 master_df = pd.concat([master_df, df])
     print(master_df)
     with open(output_file_name, 'w') as out_file:
@@ -367,9 +394,15 @@ def main():
                            help="path to folder to recurse and parse")
     argparser.add_argument('--add_train_results', action='store_true',
                            help="Decide whether to print train results")
+    argparser.add_argument('--model_type', type=str, default="GCNRNN", choices=MODEL_TYPE_CHOICES.keys(),
+                           help="Type of model to read. Default to GCNRNN.")
     args = argparser.parse_args()
-    analyze_GCNRNN_files_in_outdir(
-        args.folder_to_iterate, args.output_file_name, args.add_train_results)
+    analyze_files_in_outdir(
+        args.folder_to_iterate,
+        args.output_file_name,
+        args.model_type,
+        args.add_train_results
+    )
 
 
 if __name__ == '__main__':
