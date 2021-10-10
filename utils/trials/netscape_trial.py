@@ -225,9 +225,10 @@ class NETSCAPETrial(metaclass=ABCMeta):
             first_order_model_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_first_order_total_num(labels_orig, "test")
             )
-            null_model_diff_evaluation = TrialSummary.model_evaluation_results_type(
-                *comparison_graph_data.evaluate_null_model_diff(labels_orig, "test")
-            )
+            # null_model_diff_evaluation = TrialSummary.model_evaluation_results_type(
+            #     *comparison_graph_data.evaluate_null_model_diff(labels_orig, "test")
+            # )
+            null_model_diff_evaluation = TrialSummary.model_evaluation_results_type([np.inf], [-np.inf], [0], [np.inf])
             uniform_average_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_uniform_average(labels_orig, "test")
             )
