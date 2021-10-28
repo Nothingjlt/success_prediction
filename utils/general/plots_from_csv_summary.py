@@ -53,7 +53,7 @@ MODELS = [
 COMPARISON_MODELS = [
     "null_model",
     "first_order_model",
-    "null_diff_model",
+    # "null_diff_model",
     "uniform_average",
     "linear_weighted_average",
     "square_root_weighted_average",
@@ -468,14 +468,14 @@ def main():
     for dataset in DATASETS:
         print(f"Plotting {dataset} dataset")
         dataset_df = df.query(f'dataset=="{dataset}_{args.model_type}"')
-        model_ids = get_model_ids(dataset_df.index)
-        metric_columns = get_metric_columns(metric, model_ids)
         for measure in MEASURES:
             print(f"\tPlotting {measure} measure")
             dataset_measure_iter_df = dataset_df.query(f'measure=="{measure}"')[
                 [str(i) for i in range(NUMBER_OF_ITERATIONS)]
             ]
             for metric in METRICS:
+                model_ids = get_model_ids(dataset_df.index)
+                metric_columns = get_metric_columns(metric, model_ids)
                 plot_dataset_measure(
                     dataset_measure_iter_df,
                     dataset,
