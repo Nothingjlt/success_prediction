@@ -39,7 +39,7 @@ ALL_MODELS_COMPARISONS = namedtuple(
     [
         "null_model_comparison",
         "first_order_model_comparison",
-        "null_diff_model_comparison",
+        # "null_diff_model_comparison",
         "uniform_average_comparison",
         "linear_weighted_average_comparison",
         "square_root_weighted_average_comparison",
@@ -216,12 +216,12 @@ def compare_results(clean_df, base_model_prefix, models_index):
         "first_order_model",
         0
     )
-    null_diff_model_comparison = update_model_comparison(
-        clean_df,
-        base_model_prefix,
-        "null_diff_model",
-        0
-    )
+    # null_diff_model_comparison = update_model_comparison(
+    #     clean_df,
+    #     base_model_prefix,
+    #     "null_diff_model",
+    #     0
+    # )
     uniform_average_model_comparison = update_model_comparison(
         clean_df,
         base_model_prefix,
@@ -262,7 +262,7 @@ def compare_results(clean_df, base_model_prefix, models_index):
     all_models_comparison = ALL_MODELS_COMPARISONS(
         null_model_comparison,
         first_order_model_comparison,
-        null_diff_model_comparison,
+        # null_diff_model_comparison,
         uniform_average_model_comparison,
         linear_weighted_average_comparison,
         square_root_weighted_average_comparison,
@@ -280,8 +280,10 @@ def decide_if_model_won(statistics):
     else:
         if statistics.perc_improvement > 0:
             comparison_score = "won"
-        else:
+        elif statistics.perc_improvement < 0:
             comparison_score = "lost"
+        else:
+            comparison_score = "inconclusive"
     return comparison_score
 
 
@@ -351,6 +353,10 @@ def compare_to_comparison_models(df, add_train_results):
     return output_df
 
 
+def remove_null_diff_model(df):
+    return df[~df.index.str.contains('null_diff_model')]
+
+
 def prepare_file_df(root, file_name, add_comparisons=True, add_train_results=False):
     df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
 
@@ -358,6 +364,8 @@ def prepare_file_df(root, file_name, add_comparisons=True, add_train_results=Fal
         output_df = compare_to_comparison_models(df, add_train_results)
     else:
         output_df = df
+    
+    output_df = remove_null_diff_model(output_df)
 
     measure, dataset = split_file_name_to_measure_and_dataset(file_name)
     output_df["measure"] = measure
