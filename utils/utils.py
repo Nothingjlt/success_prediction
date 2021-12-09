@@ -245,8 +245,8 @@ class GraphSeriesData():
 
     def _prepare_and_calc_criterion(self, predictions, true_labels, criterion):
         if self._learn_logs:
-            predictions = torch.exp(predictions) # TODO consider adding - self._eps here too
-            true_labels = torch.exp(true_labels)-self._eps
+            predictions = torch.exp(predictions)
+            true_labels = torch.exp(true_labels)
         predictions_np = predictions.cpu().detach().numpy()
         true_labels_np = true_labels.cpu().detach().numpy()
         return self._calc_criterion_np(predictions_np, true_labels_np, criterion)
