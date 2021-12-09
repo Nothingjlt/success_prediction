@@ -158,12 +158,12 @@ class NETSCAPETrial(metaclass=ABCMeta):
         graph_data = GraphSeriesData(self._params["log_guard_scale"])
 
         graph_data.load_data(
-            graphs,
-            graph_features,
+            graphs[:-1],
+            graph_features[:-1],
             user_node_id_to_idx=self._node_id_to_idx,
             user_idx_to_node_id=self._idx_to_node_id,
             learned_label=learned_label,
-            labels_list=labels,
+            labels_list=labels[-2:],
             learn_logs=self._should_learn_logs(),
             learn_diffs=self._should_learn_diff(),
             train=train,
