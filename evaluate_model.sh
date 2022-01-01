@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$1" == "-h" ]; then
-  echo "Usage: `basename $0` <model id> \"<model command line parameters>\""
+  echo "Usage: `basename $0` <model id> <num of iterations> \"<model command line parameters>\""
   exit 0
 fi
 
@@ -14,8 +14,8 @@ mkdir ./out/$1
 for (( i=0;i<$ELEMENTS;i++)); do
     IFS=' ' read -ra DATASET <<< "${DATASETS[${i}]}"
     echo "Evaluating ${DATASET[0]}/${DATASET[1]}"
-    echo "Running python ./run_gcn_rnn_trial.py --seed 1 --data-folder-name ${DATASET[0]} --data-name ${DATASET[1]} --learned-label all_labels --num-iterations 30 $2"
-    python ./run_gcn_rnn_trial.py --seed 1 --data-folder-name ${DATASET[0]} --data-name ${DATASET[1]} --learned-label all_labels --num-iterations 30 $2
+    echo "Running python ./run_gcn_rnn_trial.py --data-folder-name ${DATASET[0]} --data-name ${DATASET[1]} --learned-label all_labels --num-iterations $2 $3"
+    python ./run_gcn_rnn_trial.py --data-folder-name ${DATASET[0]} --data-name ${DATASET[1]} --learned-label all_labels --num-iterations $2 $3
     # echo "Moving output data to model folder"
     # echo "Running mv -f ./out/${DATASET[0]} ./out/$1/${DATASET[0]}"
     # mv -f ./out/${DATASET[0]} ./out/$1/${DATASET[0]}
@@ -28,7 +28,7 @@ echo "Running python ./utils/general/output_file_reader.py ./out/$1_summary.csv 
 python ./utils/general/output_file_reader.py ./out/$1_summary.csv ./out --add_train_results
 
 echo "Generating plots"
-echo "Running python ./utils/general/plots_from_csv_summary.py ./out/$1_summary.csv GCNRNN ./out/plots"
-python ./utils/general/plots_from_csv_summary.py ./out/$1_summary.csv GCNRNN ./out/plots
+echo "Running python ./utils/general/plots_from_csv_summary.py ./out/$1_summary.csv GCNRNN ./out/plots --num-of-iterations $2"
+python ./utils/general/plots_from_csv_summary.py ./out/$1_summary.csv GCNRNN ./out/plots --num-of-iterations $2
 
 echo "Done"

@@ -386,6 +386,12 @@ def main():
         type=str,
         help="path of dir to save plots to"
     )
+    argparser.add_argument(
+        "--num-of-iterations",
+        type=int,
+        default=NUMBER_OF_ITERATIONS,
+        help="Number of iterations in model evaluation"
+    )
 
     args = argparser.parse_args()
 
@@ -471,7 +477,7 @@ def main():
         for measure in MEASURES:
             print(f"\tPlotting {measure} measure")
             dataset_measure_iter_df = dataset_df.query(f'measure=="{measure}"')[
-                [str(i) for i in range(NUMBER_OF_ITERATIONS)]
+                [str(i) for i in range(args.num_of_iterations)]
             ]
             for metric in METRICS:
                 model_ids = get_model_ids(dataset_df.index)

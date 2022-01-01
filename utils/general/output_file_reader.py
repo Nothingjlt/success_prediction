@@ -274,8 +274,8 @@ def compare_results(clean_df, base_model_prefix, models_index):
     return all_models_comparison
 
 
-def decide_if_model_won(statistics):
-    if statistics.wilcoxon_pvalue > P_VALUE_THRESHOLD:
+def decide_if_model_won(statistics, p_value=P_VALUE_THRESHOLD):
+    if statistics.wilcoxon_pvalue > p_value:
         comparison_score = "inconclusive"
     else:
         if statistics.perc_improvement > 0:
@@ -287,7 +287,7 @@ def decide_if_model_won(statistics):
     return comparison_score
 
 
-def add_comparison_to_df(df, base_model_prefix, comparison_results):
+def add_comparison_to_df(df, base_model_prefix, comparison_results, p_value=P_VALUE_THRESHOLD):
     for comparison_name, comparison_result in comparison_results._asdict().items():
         for metric, statistics in comparison_result.items():
             for statistic_name, statistic_value in statistics._asdict().items():
@@ -297,7 +297,7 @@ def add_comparison_to_df(df, base_model_prefix, comparison_results):
                     f"{comparison_name}_{statistic_name}",
                     statistic_value
                 )
-            comparison_score = decide_if_model_won(statistics)
+            comparison_score = decide_if_model_won(statistics, p_value)
             df = add_values_to_df(
                 df,
                 f"{base_model_prefix}_{metric}",
@@ -307,7 +307,7 @@ def add_comparison_to_df(df, base_model_prefix, comparison_results):
     return df
 
 
-def compare_to_comparison_models(df, add_train_results):
+def compare_to_comparison_models(df, add_train_results, p_value=P_VALUE_THRESHOLD):
     models_index = get_latest_model_index(df)
     output_df = df.drop(['metric', 'model'], axis=1)
     model_test_comparison_results = compare_results(
@@ -336,17 +336,20 @@ def compare_to_comparison_models(df, add_train_results):
         output_df = add_comparison_to_df(
             output_df_with_worst_case,
             "model_worst_case",
-            model_worst_case_comparison_results
+            model_worst_case_comparison_results,
+            p_value
         )
         output_df = add_comparison_to_df(
             output_df,
             "model_train",
-            model_train_comparison_results
+            model_train_comparison_results,
+            p_value
         )
     output_df = add_comparison_to_df(
         output_df,
         "model_test",
-        model_test_comparison_results
+        model_test_comparison_results,
+        p_value
     )
     output_df.fillna('', inplace=True)
 
@@ -357,11 +360,11 @@ def remove_null_diff_model(df):
     return df[~df.index.str.contains('null_diff_model')]
 
 
-def prepare_file_df(root, file_name, add_comparisons=True, add_train_results=False):
+def prepare_file_df(root, file_name, add_comparisons=True, add_train_results=False, p_value=P_VALUE_THRESHOLD):
     df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
 
     if add_comparisons:
-        output_df = compare_to_comparison_models(df, add_train_results)
+        output_df = compare_to_comparison_models(df, add_train_results, p_value)
     else:
         output_df = df
     
@@ -380,14 +383,15 @@ def analyze_files_in_outdir(
     out_files_dir: str,
     output_file_name: str,
     model_type: str,
-    add_train_results: bool = False
+    add_train_results: bool = False,
+    p_value: float = P_VALUE_THRESHOLD
 ):
     master_df = pd.DataFrame()
     for r, d, files in os.walk(out_files_dir):
         for f in files:
             if f.endswith(f"_{MODEL_TYPE_CHOICES[model_type][0]}.out.csv"):
                 df = prepare_file_df(
-                    r, f, add_comparisons=MODEL_TYPE_CHOICES[model_type][1], add_train_results=add_train_results)
+                    r, f, add_comparisons=MODEL_TYPE_CHOICES[model_type][1], add_train_results=add_train_results, p_value=p_value)
                 master_df = pd.concat([master_df, df])
     print(master_df)
     with open(output_file_name, 'w') as out_file:
@@ -404,12 +408,15 @@ def main():
                            help="Decide whether to print train results")
     argparser.add_argument('--model_type', type=str, default="GCNRNN", choices=MODEL_TYPE_CHOICES.keys(),
                            help="Type of model to read. Default to GCNRNN.")
+    argparser.add_argument('--target-p-value', type=float, default=P_VALUE_THRESHOLD,
+                           help="Target P-Value to determine whether model won or lost.")
     args = argparser.parse_args()
     analyze_files_in_outdir(
         args.folder_to_iterate,
         args.output_file_name,
         args.model_type,
-        args.add_train_results
+        args.add_train_results,
+        args.target_p_value
     )
 
 
