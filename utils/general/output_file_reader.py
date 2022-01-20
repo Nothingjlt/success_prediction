@@ -404,9 +404,9 @@ def main():
                            help="path to output file")
     argparser.add_argument('folder_to_iterate', type=str,
                            help="path to folder to recurse and parse")
-    argparser.add_argument('--add_train_results', action='store_true',
+    argparser.add_argument('--add-train-results', action='store_true',
                            help="Decide whether to print train results")
-    argparser.add_argument('--model_type', type=str, default="GCNRNN", choices=MODEL_TYPE_CHOICES.keys(),
+    argparser.add_argument('--model-type', type=str, default="GCNRNN", choices=MODEL_TYPE_CHOICES.keys(),
                            help="Type of model to read. Default to GCNRNN.")
     argparser.add_argument('--target-p-value', type=float, default=P_VALUE_THRESHOLD,
                            help="Target P-Value to determine whether model won or lost.")

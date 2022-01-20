@@ -3,6 +3,7 @@ import torch
 from sklearn.metrics import mean_squared_error
 from torch.nn.modules import loss
 from torch_geometric.data import Data
+from torch_geometric.utils import add_self_loops
 import numpy as np
 from sklearn.metrics import r2_score, mean_absolute_error
 from scipy.stats import pearsonr, spearmanr
@@ -83,6 +84,8 @@ class GraphSeriesData():
                 device=self._device,
             )
 
+            edges, _ = add_self_loops(edges, num_nodes=self._num_of_nodes)
+
             d = Data(x=x, edge_index=edges)
 
             self._graph_series_data_list.append(d)
@@ -149,14 +152,7 @@ class GraphSeriesData():
         indices = [self._node_id_to_idx[node_id] for node_id in node_idxs]
         ret_features = []
         for time_step_features in features:
-            all_features = torch.empty(
-                (
-                    self._num_of_nodes,
-                    1
-                ),
-                dtype=torch.float,
-                device=self._device
-            )
+            all_features = []
             for key in time_step_features.keys():
                 new_features = self._get_values_by_indices(
                     time_step_features,
@@ -165,16 +161,10 @@ class GraphSeriesData():
                 )
                 if key == 'general':
                     new_features = GraphSeriesData._sum_general_label(
-                        new_features)
-                all_features = torch.cat(
-                    (
-                        all_features,
-                        new_features.view(-1, 1)
-                    ),
-                    dim=1
-                )
-            all_features = all_features[:, 1:]
-            ret_features.append(all_features)
+                        new_features
+                    )
+                all_features.append(new_features.view(-1, 1))
+            ret_features.append(torch.cat(all_features, dim=1))
         return ret_features
 
     @staticmethod
@@ -240,6 +230,8 @@ class GraphSeriesData():
             return spearmanr(predictions_np, true_labels_np).correlation
         if criterion == 'mae':
             return mean_absolute_error(predictions_np, true_labels_np)
+        if criterion == 'mse':
+            return mean_squared_error(predictions_np, true_labels_np)
         if criterion == 'loss':
             return loss_criterion(predictions_np, true_labels_np)
 
@@ -260,6 +252,9 @@ class GraphSeriesData():
     def evaluate_mae(self, predictions, true_labels):
         return self._prepare_and_calc_criterion(predictions, true_labels, 'mae')
 
+    def evaluate_mse(self, predictions, true_labels):
+        return self._prepare_and_calc_criterion(predictions, true_labels, 'mse')
+
     def _evaluate_log_r2_score(self, predictions, true_labels):
         predictions_log = torch.log(predictions)
         true_labels_log = torch.log(true_labels)
@@ -270,6 +265,7 @@ class GraphSeriesData():
         accuracies = []
         correlations = []
         maes = []
+        mses = []
         stacked_labels = self._get_stacked_labels_by_indices_set(
             labels,
             indices
@@ -306,7 +302,14 @@ class GraphSeriesData():
                     "mae"
                 )
             )
-        return losses, accuracies, correlations, maes
+            mses.append(
+                self._calc_criterion_np(
+                    model_results.model_prediction,
+                    model_results.true_label,
+                    "mse"
+                )
+            )
+        return losses, accuracies, correlations, maes, mses
 
     def evaluate_null_model_total_num(self, labels, indices, loss_criterion=mean_squared_error):
         nm = comparison_models.NullModel()
@@ -348,7 +351,7 @@ class GraphSeriesData():
         if average_time is None:
             average_time = len(labels) - 1
         if average_time < degree + 1:
-            return ([np.nan],) * 4
+            return ([np.nan],) * 5
         prm = comparison_models.PolynomialRegressionModel(
             average_time, degree, epsilon)
         return self._evaluate_any_model(prm, labels, indices, loss_criterion, average_time)

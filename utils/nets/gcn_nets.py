@@ -9,10 +9,10 @@ class GCNNet(nn.Module):
     def __init__(self, num_features, gcn_latent_dim, h_layers=[16], dropout=0.5):
         super(GCNNet, self).__init__()
         self._convs = nn.ModuleList()
-        self._convs.append(GCNConv(num_features, h_layers[0]))
+        self._convs.append(GCNConv(num_features, h_layers[0], add_self_loops=False))
         for idx, layer in enumerate(h_layers[1:]):
-            self._convs.append(GCNConv(h_layers[idx], layer))
-        self._convs.append(GCNConv(h_layers[-1], gcn_latent_dim))
+            self._convs.append(GCNConv(h_layers[idx], layer, add_self_loops=False))
+        self._convs.append(GCNConv(h_layers[-1], gcn_latent_dim, add_self_loops=False))
         self._dropout = dropout
         self._activation_func = F.leaky_relu
         self._device = DEVICE
@@ -51,15 +51,11 @@ class GCNSeriesNet(nn.Module):
         return
 
     def forward(self, data: list, idx_subset: list):
-        gcn_output = torch.empty(size=(1, data[0].num_nodes, self._gcn_latent_dim)).to(
-            self._device
-        )
+        gcn_outputs = []
         for d in data:
-            gcn_output = torch.cat(
-                (gcn_output, self._gcn_net(
-                    d)[None, :, :]), dim=0
-            )
-        gcn_output = gcn_output[1:, :, :]
+            current_output = self._gcn_net(d)
+            gcn_outputs.append(current_output)
+        gcn_output = torch.stack(gcn_outputs, dim=0)
         gcn_output_only_training = gcn_output[:, idx_subset, :]
 
         return gcn_output_only_training

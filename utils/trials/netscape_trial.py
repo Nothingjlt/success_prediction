@@ -172,6 +172,18 @@ class NETSCAPETrial(metaclass=ABCMeta):
         )
 
         model = self._get_model(graph_data)
+
+        self._set_seed(self._seed)
+
+        def weight_reset(m):
+            reset_parameters = getattr(m, "reset_parameters", None)
+            if callable(reset_parameters):
+                m.reset_parameters()
+                # for k, v in m._parameters.items():
+                #     print(k, v)
+                return
+        model._net.apply(weight_reset)
+
         model.train()
         with torch.no_grad():
             model_test_evaluation = TrialSummary.model_evaluation_results_type(
@@ -179,14 +191,16 @@ class NETSCAPETrial(metaclass=ABCMeta):
                     "test",
                     evaluate_accuracy=True,
                     evaluate_correlation=True,
-                    evaluate_mae=True
-                )
+                    evaluate_mae=True,
+                    evaluate_mse=True
+                )[1:]
             )
             model_test_evaluation = model_test_evaluation._replace(
-                mses=[model_test_evaluation.mses.cpu().numpy()],
+                losses=[model_test_evaluation.losses.cpu().numpy()],
                 accuracies=[model_test_evaluation.accuracies],
                 correlations=[model_test_evaluation.correlations],
-                maes=[model_test_evaluation.maes]
+                maes=[model_test_evaluation.maes],
+                mses=[model_test_evaluation.mses]
             )
 
             model_train_evaluation = TrialSummary.model_evaluation_results_type(
@@ -194,14 +208,16 @@ class NETSCAPETrial(metaclass=ABCMeta):
                     "train",
                     evaluate_accuracy=True,
                     evaluate_correlation=True,
-                    evaluate_mae=True
-                )
+                    evaluate_mae=True,
+                    evaluate_mse=True
+                )[1:]
             )
             model_train_evaluation = model_train_evaluation._replace(
-                mses=[model_train_evaluation.mses.cpu().numpy()],
+                losses=[model_train_evaluation.losses.cpu().numpy()],
                 accuracies=[model_train_evaluation.accuracies],
                 correlations=[model_train_evaluation.correlations],
-                maes=[model_train_evaluation.maes]
+                maes=[model_train_evaluation.maes],
+                mses=[model_train_evaluation.mses]
             )
 
             comparison_graph_data = GraphSeriesData(log_guard_scale=0)
@@ -228,7 +244,8 @@ class NETSCAPETrial(metaclass=ABCMeta):
             # null_model_diff_evaluation = TrialSummary.model_evaluation_results_type(
             #     *comparison_graph_data.evaluate_null_model_diff(labels_orig, "test")
             # )
-            null_model_diff_evaluation = TrialSummary.model_evaluation_results_type([np.inf], [-np.inf], [0], [np.inf])
+            null_model_diff_evaluation = TrialSummary.model_evaluation_results_type(
+                [np.inf], [-np.inf], [0], [np.inf], [np.inf])
             uniform_average_evaluation = TrialSummary.model_evaluation_results_type(
                 *comparison_graph_data.evaluate_uniform_average(labels_orig, "test")
             )
@@ -273,11 +290,12 @@ class NETSCAPETrial(metaclass=ABCMeta):
                 f"{name.replace('_', ' ')} mse: {np.mean([m for m in evaluation.mses]):.5f}, "
                 f"{name.replace('_', ' ')} accuracy: {np.mean(evaluation.accuracies):.5f}, "
                 f"{name.replace('_', ' ')} correlation: {np.mean(evaluation.correlations):.5f}, "
-                f"{name.replace('_', ' ')} mae: {np.mean(evaluation.maes):.5f}"
+                f"{name.replace('_', ' ')} mae: {np.mean(evaluation.maes):.5f}, "
+                f"{name.replace('_', ' ')} loss: {np.mean(evaluation.losses):.5f}"
             )
         print("\n")
 
-        return all_results
+        return all_results, TrialSummary.trial_data(model, train, test, validation)
 
     @abstractmethod
     def _get_model(self, graph_data):
@@ -371,7 +389,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
     def run_one_test_iteration(self):
 
-        all_results = self.run_trial()
+        all_results, model_data = self.run_trial()
 
         if self._nni:
             nni.report_final_result(
@@ -381,7 +399,7 @@ class NETSCAPETrial(metaclass=ABCMeta):
         else:
             self._print_all_results(all_results)
 
-        return all_results
+        return all_results, model_data
 
     def _get_output_file_name(self):
         output_file_name = "./" + self._default_out_dir + "/" + \
@@ -392,19 +410,23 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
     def iterate_test(self):
         results = []
-        output_file_name = self._get_output_file_name()
-        logger = TrialSummary(output_file_name)
+        models_data_list = []
+        self._output_file_name = self._get_output_file_name()
+        logger = TrialSummary(self._output_file_name)
 
         for i in range(self._params["num_iterations"]):
             print(
                 f'Iteration number {i+1} out of {self._params["num_iterations"]}'
             )
-            results.append(self.run_one_test_iteration())
+            result, model_data = self.run_one_test_iteration()
+            results.append(result)
+            models_data_list.append(model_data)
         print('-'*100)
         for result_idx, result in enumerate(results):
             print(f"iteration {result_idx + 1} results")
             self._print_all_results(result)
         logger.write_output(results)
+        logger.dump_models(models_data_list)
         return results
 
     def _add_general_parser_arguments(self):

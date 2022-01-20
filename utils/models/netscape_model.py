@@ -105,7 +105,7 @@ class NETSCAPEModel(metaclass=ABCMeta):
     ):
         pass
 
-    def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False, evaluate_correlation: bool = False, evaluate_mae: bool = False):
+    def evaluate(self, evaluation_set: str = "test", evaluate_accuracy: bool = False, evaluate_correlation: bool = False, evaluate_mae: bool = False, evaluate_mse: bool = False):
 
         (
             evaluation_set_idx,
@@ -147,7 +147,16 @@ class NETSCAPEModel(metaclass=ABCMeta):
             evaluation_set_next_labels
         )
 
-        return val_loss, accuracy, correlation, mae
+        mse = self._evaluate_secondary_metric(
+            self._graph_series_data.evaluate_mse,
+            evaluate_mse,
+            val_output,
+            evaluation_set_learned_labels,
+            evaluation_set_current_labels,
+            evaluation_set_next_labels
+        )
+
+        return val_output, val_loss, accuracy, correlation, mae, mse
 
     def train(self):
 
@@ -155,38 +164,45 @@ class NETSCAPEModel(metaclass=ABCMeta):
             self._net.train()
             self._optimizer.zero_grad()
 
-            train_loss, _, _, _ = self.evaluate("train")
+            _, train_loss, _, _, _, _ = self.evaluate("train")
             train_loss.backward()
             self._optimizer.step()
 
             if epoch % self._print_every_num_of_epochs == self._print_every_num_of_epochs - 1:
                 self._net.eval()
                 (
+                    _,
                     train_loss,
                     train_accuracy,
                     train_correlation,
-                    train_mae
+                    train_mae,
+                    train_mse
                 ) = self.evaluate(
                     "train",
                     evaluate_accuracy=True,
                     evaluate_correlation=True,
-                    evaluate_mae=True
+                    evaluate_mae=True,
+                    evaluate_mse=True
                 )
                 (
+                    _,
                     validation_loss,
                     validation_accuracy,
                     validation_correlation,
-                    validation_mae
+                    validation_mae,
+                    validation_mse
                 ) = self.evaluate(
                     "validation",
                     evaluate_accuracy=True,
                     evaluate_correlation=True,
-                    evaluate_mae=True
+                    evaluate_mae=True,
+                    evaluate_mse=True
                 )
                 print(
                     f"epoch: {epoch + 1}, train loss: {train_loss.data.cpu().item():.5f}, validation loss:{validation_loss.data.cpu().item():.5f}, "
                     f"train accuracy: {train_accuracy:.5f}, validation accuracy: {validation_accuracy:.5f} "
                     f"train correlation: {train_correlation:.5f}, validation correlation: {validation_correlation:.5f} "
                     f"train mean absolute error: {train_mae:.5f}, validation mean absolute error: {validation_mae:.5f} "
+                    f"train mean squared error: {train_mse:.5f}, validation mean squared error: {validation_mse:.5f} "
                 )
         return
