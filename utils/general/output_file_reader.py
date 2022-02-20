@@ -1,9 +1,11 @@
-import re
+from operator import itemgetter
 import argparse
 import pandas as pd
 from scipy import stats
 import os
+import errno
 from collections import namedtuple
+from functools import reduce
 
 
 # Model_type_name: (file_name_representation_of_model_type, should_add_comparisons_to_model)
@@ -20,6 +22,12 @@ MEASURES = [
     "k_core",
     "load_centrality",
     "page_rank"
+]
+
+
+NON_RESULTS_COLUMNS_ORIG_DF = [
+    'model',
+    'metric'
 ]
 
 
@@ -360,23 +368,72 @@ def remove_null_diff_model(df):
     return df[~df.index.str.contains('null_diff_model')]
 
 
-def prepare_file_df(root, file_name, add_comparisons=True, add_train_results=False, p_value=P_VALUE_THRESHOLD):
-    df = pd.read_csv(os.path.join(root, file_name), delimiter=',', index_col=0)
+def prepare_file_df(df, measure, dataset, add_comparisons=True, add_train_results=False, p_value=P_VALUE_THRESHOLD):
 
     if add_comparisons:
-        output_df = compare_to_comparison_models(df, add_train_results, p_value)
+        output_df = compare_to_comparison_models(
+            df, add_train_results, p_value)
     else:
         output_df = df
-    
+
     output_df = remove_null_diff_model(output_df)
 
-    measure, dataset = split_file_name_to_measure_and_dataset(file_name)
     output_df["measure"] = measure
     output_df["dataset"] = dataset
     output_df["metric"] = df["metric"]
     output_df["model"] = df["model"]
 
     return output_df
+
+
+def get_results_columns(df):
+    return df.columns.drop(NON_RESULTS_COLUMNS_ORIG_DF)
+
+
+def rename_columns(df, results_columns, current_column_index):
+    def add_current_index_to_column_name(col_name):
+        if col_name in results_columns:
+            val_to_return = f"{int(col_name) + current_column_index}"
+        else:
+            val_to_return = col_name
+        return val_to_return
+    return df.rename(columns=add_current_index_to_column_name)
+
+
+def merge_experiment_runs(all_experiment_results):
+    all_dfs = []
+    for (measure, dataset), experiment in all_experiment_results.items():
+        current_column_index = 0
+        current_df_list = []
+        for _, df in sorted(experiment, key=itemgetter(0)):
+            results_columns = get_results_columns(df)
+            current_df_list.append(
+                rename_columns(df, results_columns, current_column_index)
+            )
+            current_column_index += len(results_columns)
+        current_df = reduce(
+            lambda left, right: left.join(right[get_results_columns(right)]),
+            current_df_list
+        )
+        all_dfs.append((current_df, measure, dataset))
+    return all_dfs
+
+
+def merge_dfs(out_files_dir, model_type):
+    all_experiment_results_dict = {}
+    for r, d, files in os.walk(out_files_dir):
+        for f in files:
+            if f.endswith(f"_{MODEL_TYPE_CHOICES[model_type][0]}.out.csv"):
+                experiment_name = os.path.split(os.path.split(r)[0])[-1]
+                df = pd.read_csv(
+                    os.path.join(r, f), delimiter=',', index_col=0
+                )
+                measure, dataset = split_file_name_to_measure_and_dataset(f)
+                all_experiment_results_dict.setdefault(
+                    (measure, dataset),
+                    []).append((experiment_name, df))
+    merged_dfs = merge_experiment_runs(all_experiment_results_dict)
+    return merged_dfs
 
 
 def analyze_files_in_outdir(
@@ -386,14 +443,26 @@ def analyze_files_in_outdir(
     add_train_results: bool = False,
     p_value: float = P_VALUE_THRESHOLD
 ):
-    master_df = pd.DataFrame()
-    for r, d, files in os.walk(out_files_dir):
-        for f in files:
-            if f.endswith(f"_{MODEL_TYPE_CHOICES[model_type][0]}.out.csv"):
-                df = prepare_file_df(
-                    r, f, add_comparisons=MODEL_TYPE_CHOICES[model_type][1], add_train_results=add_train_results, p_value=p_value)
-                master_df = pd.concat([master_df, df])
+    merged_dfs = merge_dfs(out_files_dir, model_type)
+    all_dfs = []
+    for df, measure, dataset in merged_dfs:
+        analyzed_df = prepare_file_df(
+            df,
+            measure,
+            dataset,
+            add_comparisons=MODEL_TYPE_CHOICES[model_type][1],
+            add_train_results=add_train_results,
+            p_value=p_value
+        )
+        all_dfs.append(analyzed_df)
+    master_df = pd.concat(all_dfs)
     print(master_df)
+    if not os.path.exists(os.path.dirname(output_file_name)):
+        try:
+            os.makedirs(os.path.dirname(output_file_name))
+        except OSError as exc:  # Guard against race condition
+            if exc.errno != errno.EEXIST:
+                raise
     with open(output_file_name, 'w') as out_file:
         out_file.write(master_df.to_csv(sep=",").replace('\r\n', '\n'))
 
