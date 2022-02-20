@@ -228,7 +228,7 @@ class PeriodicAveragePredictor(AveragePredictor):
         self._epsilon = epsilon
         self._d_period = [
             i % self._period for i in range(1, self._average_time + 1)
-        ]
+        ] # TODO fix bug as this needs to be (reversed([i $ self._period for i in range(1, self._average_time + 1)]))
 
 
 # As defined in https://www.cl.cam.ac.uk/~rja14/Papers/computernets12.pdf under 5.1 Periodic Intervals
@@ -276,6 +276,38 @@ class WeightedPeriodicAverageModel(PeriodicAveragePredictor):
                     )
                 ) * d
             )
-            for d_period, d in zip(self._d_period, range(1, self._average_time + 1))
+            for d_period, d in zip(self._d_period, range(1, self._average_time + 1)) # TODO fix bug where d need to be reversed(range(1, self._average_time + 1))
         ]
         self._total_weight = np.sum(self._weights)
+
+
+# As defined in https://link.springer.com/content/pdf/10.1007/s00779-016-0958-0.pdf under 5.2 Periodical Average Method
+# in our case m = average_time, p = period, and w is normalized to be 1
+class ZhouPeriodicAveragePredictor(AveragePredictor):
+    def __init__(self, average_time, period):
+        super(ZhouPeriodicAveragePredictor, self).__init__(
+            average_time
+        )
+        self._period = period
+        self._a = np.min([x % period for x in range(self._average_time, 0, -1)])
+        self._fs = [1 if k % self._period == self._a else 0 for k in range(self._average_time + 1, 1, -1)]
+
+
+class ZhouPeriodicAverageModel(ZhouPeriodicAveragePredictor):
+    def __init__(self, average_time, period):
+        super(ZhouPeriodicAverageModel, self).__init__(
+            average_time,
+            period
+        )
+        self._weights = self._fs
+
+
+class ZhouWeightedPeriodingAverageModel(ZhouPeriodicAveragePredictor):
+    def __init__(self, average_time, period):
+        super(ZhouPeriodicAveragePredictor, self).__init__(
+            average_time,
+            period
+        )
+        self._ds = [(self._average_time - k)/self._period for k in range(average_time + 1, 1, -1)]
+        self._ws = map(lambda x: 1/x, self._ds)
+        self._weights = np.multiply(self._ws, self._fs)

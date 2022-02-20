@@ -173,17 +173,6 @@ class NETSCAPETrial(metaclass=ABCMeta):
 
         model = self._get_model(graph_data)
 
-        self._set_seed(self._seed)
-
-        def weight_reset(m):
-            reset_parameters = getattr(m, "reset_parameters", None)
-            if callable(reset_parameters):
-                m.reset_parameters()
-                # for k, v in m._parameters.items():
-                #     print(k, v)
-                return
-        model._net.apply(weight_reset)
-
         model.train()
         with torch.no_grad():
             model_test_evaluation = TrialSummary.model_evaluation_results_type(

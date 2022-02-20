@@ -1,13 +1,9 @@
-from numpy.lib.function_base import average
 import torch
-from sklearn.metrics import mean_squared_error
-from torch.nn.modules import loss
 from torch_geometric.data import Data
 from torch_geometric.utils import add_self_loops
 import numpy as np
-from sklearn.metrics import r2_score, mean_absolute_error
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from scipy.stats import pearsonr, spearmanr
-from sklearn.linear_model import LinearRegression
 from utils.models import comparison_models
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -225,15 +221,15 @@ class GraphSeriesData():
 
     def _calc_criterion_np(self, predictions_np, true_labels_np, criterion, loss_criterion=mean_squared_error):
         if criterion == 'r2_score':
-            return r2_score(predictions_np, true_labels_np)
+            return r2_score(true_labels_np, predictions_np)
         if criterion == 'correlation':
-            return spearmanr(predictions_np, true_labels_np).correlation
+            return spearmanr(true_labels_np, predictions_np).correlation
         if criterion == 'mae':
-            return mean_absolute_error(predictions_np, true_labels_np)
+            return mean_absolute_error(true_labels_np, predictions_np)
         if criterion == 'mse':
-            return mean_squared_error(predictions_np, true_labels_np)
+            return mean_squared_error(true_labels_np, predictions_np)
         if criterion == 'loss':
-            return loss_criterion(predictions_np, true_labels_np)
+            return loss_criterion(true_labels_np, predictions_np)
 
     def _prepare_and_calc_criterion(self, predictions, true_labels, criterion):
         if self._learn_logs:
