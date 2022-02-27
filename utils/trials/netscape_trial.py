@@ -433,13 +433,13 @@ class NETSCAPETrial(metaclass=ABCMeta):
                                      help="Number of epochs between summary prints")
         self._argparser.add_argument("--log-guard-scale", type=float, default=10,
                                      help="Scale of log guard, used to guard against taking log of 0")
-        self._argparser.add_argument("--l1-lambda", type=float, default=5e-6,
+        self._argparser.add_argument("--l1-lambda", type=float, default=4.931525564508493e-20,
                                      help="L1 norm regularization weight")
-        self._argparser.add_argument("--epochs", type=int, default=500,
+        self._argparser.add_argument("--epochs", type=int, default=3500,
                                      help="Number of epochs to learn")
-        self._argparser.add_argument("--learning-rate", type=float, default=1e-3,
+        self._argparser.add_argument("--learning-rate", type=float, default=0.00023487362035039765,
                                      help="Learning rate for network")
-        self._argparser.add_argument("--weight-decay", type=float, default=3e-2,
+        self._argparser.add_argument("--weight-decay", type=float, default=4.395664725203555e-5,
                                      help="Weight decay regularization")
         self._argparser.add_argument("--add-labels-of-all-times", action='store_true',
                                      help="Decide whether learned label of each time should be added to features. "
