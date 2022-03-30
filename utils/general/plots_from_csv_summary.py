@@ -607,6 +607,26 @@ def create_total_model_comp_df_by_measure_split_by_measure_dataset_filename(
     return output_file_name
 
 
+def create_total_model_comp_df_by_measure_split_by_measure_dataset_stacked_filename(
+    model, metric, output_path):
+    rest_of_path = f'{MODELS_PRESENTABLE[model].replace(" ", "_")}_' +\
+        f'{metric}_performance_in_all_datasets_split_by_measures_stacked.png'
+    output_file_name = create_output_file_name(output_path, rest_of_path)
+    return output_file_name
+
+
+def create_total_model_comp_df_by_measure_split_by_measures_stacked_filename(
+    model, metric, measure, output_path):
+    rest_of_path = os.path.join(
+        'all_datasets',
+        metric,
+        f'{MODELS_PRESENTABLE[model].replace(" ", "_")}_' +\
+        f'{metric}_{measure}_performance_in_all_datasets_stacked.png'
+    )
+    output_file_name = create_output_file_name(output_path, rest_of_path)
+    return output_file_name
+
+
 def create_total_model_comp_df_by_measure_split_by_metric_comp_model_filename(
         model, output_path, dataset='all_datasets'):
     rest_of_path = f'{MODELS_PRESENTABLE[model].replace(" ", "_")}_' +\
@@ -620,6 +640,15 @@ def create_total_model_comp_df_by_metric_measure_filename(
 ):
     rest_of_path = f'{MODELS_PRESENTABLE[model].replace(" ", "_")}_' +\
         f'performance_in_{dataset.replace("-", "_")}_by_measure_metric.png'
+    output_file_name = create_output_file_name(output_path, rest_of_path)
+    return output_file_name
+
+
+def create_total_model_comp_df_by_metric_measure_stacked_filename(
+    model, output_path, dataset='all_datasets'
+):
+    rest_of_path = f'{MODELS_PRESENTABLE[model].replace(" ", "_")}_' +\
+        f'performance_in_{dataset.replace("-", "_")}_by_measure_metric_stacked.png'
     output_file_name = create_output_file_name(output_path, rest_of_path)
     return output_file_name
 
@@ -940,6 +969,55 @@ def plot_total_model_comp_df_by_metric_measure(
     return
 
 
+def plot_total_model_comp_df_by_metric_measure_stacked(
+    df,
+    model,
+    score_order,
+    measure_order,
+    metric_order,
+    output_path,
+    dataset='all_datasets'
+):
+    # TODO flip row/column, increase font size still not good.
+    with sns.plotting_context("paper", font_scale=3, rc={'legend.fontsize': 'large'}):
+        p = sns.displot(
+            col="measure",
+            x="metric",
+            data=df.dropna(),
+            hue='score',
+            kind='hist',
+            hue_order=score_order,
+            col_order=measure_order,
+            edgecolor='k',
+            multiple='stack',
+            alpha=1,
+            height=7,
+            aspect=0.6
+        )
+        # p.add_legend()
+        for ax in p.axes:            
+            for subax in ax:
+                split_title = subax.get_title().split(' ')
+                curr_measure = split_title[2]
+                subax.set_xlabel(f'{MEASURES_PRESENTABLE[curr_measure]}')
+                subax.set_xticklabels(
+                    map(
+                        lambda x: METRICS_PRESENTABLE[x.get_text()],
+                        subax.get_xticklabels()
+                    ), rotation=45, ha='right'
+                )
+                subax.set(title='')
+        tag = f'{MODELS_PRESENTABLE[model]} performance in {DATASETS_PRESENTABLE[dataset]} by centrality measure and evaluation metric'
+
+        output_file_name = create_total_model_comp_df_by_metric_measure_stacked_filename(
+            model,
+            output_path,
+            dataset
+        )
+        process_facet_grid(p, tag, output_file_name)
+    return
+
+
 def plot_total_model_comp_df_by_measure_comp_model(
     comp_df,
     model,
@@ -1047,6 +1125,76 @@ def plot_total_model_comp_df_by_measure_split_by_measure_dataset(
     return
 
 
+def plot_total_model_comp_df_by_measure_split_by_measure_dataset_stacked(
+    comp_df,
+    model,
+    metric,
+    score_order,
+    measure_order,
+    dataset_order,
+    output_path
+):
+    with sns.plotting_context("paper", font_scale=1, rc={'legend.fontsize': 'large'}):
+        for measure in measure_order:
+            p = sns.displot(
+                x="dataset",
+                data=comp_df.query(f'metric=="{metric}" & measure=="{measure}"'),
+                hue='score',
+                kind='hist',
+                multiple='stack',
+                hue_order=score_order,
+                edgecolor='k',
+            )
+            p.ax.set_xlabel(MEASURES_PRESENTABLE[measure])
+            p.ax.set_xticklabels(
+                    map(
+                        lambda x: DATASETS_SHORT_CAPTION[x.get_text().replace('_GCNRNN', '')].replace('\_', '_'),
+                        p.ax.get_xticklabels()
+                    ), rotation=90, ha='center'
+                )
+            tag = f'{MODELS_PRESENTABLE[model]} {METRICS_PRESENTABLE[metric]} performance in all datasets compared to all models in {MEASURES_PRESENTABLE[measure]} prediction'
+            output_file_name = create_total_model_comp_df_by_measure_split_by_measures_stacked_filename(
+                model,
+                metric,
+                measure,
+                output_path
+            )
+            process_plot(p, tag, output_file_name)
+        # p = sns.displot(
+        #     col='measure',
+        #     x="dataset",
+        #     data=comp_df.query(f'metric=="{metric}"'),
+        #     hue='score',
+        #     kind='hist',
+        #     multiple='stack',
+        #     hue_order=score_order,
+        #     col_order=measure_order,
+        #     row_order=dataset_order,
+        #     edgecolor='k',
+        # )
+        # for ax in p.axes:
+        #     for subax in ax:
+        #         split_title = subax.get_title().split(' ')
+        #         curr_measure = split_title[2]
+        #         subax.set_xlabel(MEASURES_PRESENTABLE[curr_measure])
+        #         subax.set(title='')
+        #         subax.set_xticklabels(
+        #             map(
+        #                 lambda x: DATASETS_SHORT_CAPTION[x.get_text().replace('_GCNRNN', '')].replace('\_', '_'),
+        #                 subax.get_xticklabels()
+        #             ), rotation=90, ha='center'
+        #         )
+        # # subax.set_xticklabels([])
+        # tag = f'{MODELS_PRESENTABLE[model]} {METRICS_PRESENTABLE[metric]} performance in all datasets compared to all models, split by centrality measure'
+        # output_file_name = create_total_model_comp_df_by_measure_split_by_measure_dataset_stacked_filename(
+        #     model,
+        #     metric,
+        #     output_path
+        # )
+        # process_facet_grid(p, tag, output_file_name, legend_top=True)
+    return
+
+
 def plot_total_model_comp_df_by_measure_split_by_metric_comp_model(
     comp_df,
     model,
@@ -1129,10 +1277,18 @@ def plot_total_model_comp_df(
         )
         if dataset == 'all_datasets':
             for metric in METRICS:
+                plot_total_model_comp_df_by_measure_split_by_measure_dataset_stacked(
+                    comp_df, model, metric, score_order, measure_order,
+                    [f'{d}_GCNRNN' for d in DATASETS], output_path
+                )
                 plot_total_model_comp_df_by_measure_split_by_measure_dataset(
                     comp_df, model, metric, score_order, measure_order,
                     [f'{d}_GCNRNN' for d in DATASETS], output_path
                 )
+        plot_total_model_comp_df_by_metric_measure_stacked(
+            comp_df, model, score_order, measure_order, metric_order, output_path,
+            dataset=dataset
+        )
         plot_total_model_comp_df_by_measure_comp_model(
             comp_df, model, score_order, measure_order, comparison_models_order,
             output_path, dataset=dataset)
