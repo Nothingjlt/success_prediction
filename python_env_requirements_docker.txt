@@ -1,9 +1,6 @@
-torch-cluster
-torch-geometric
-torch-scatter
-torch-sparse
-torch-spline-conv
-torchaudio
 
-bitstring
-nni
+
+bitstring==3.1.7
+nni==2.3
+dill==0.3.4
+seaborn==0.11.1

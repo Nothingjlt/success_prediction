@@ -1,3 +1,9 @@
 [submodule "lib/graph_measures"]
 	path = lib/graph_measures
-	url = https://github.com/louzounlab/graph-measures.git
+	url = https://github.com/Nothingjlt/graph-measures-1.git
+[submodule "lib/TCN"]
+	path = lib/TCN
+	url = https://github.com/locuslab/TCN.git
+[submodule "lib/docker-openssh-server"]
+	path = lib/docker-openssh-server
+	url = https://github.com/linuxserver/docker-openssh-server.git

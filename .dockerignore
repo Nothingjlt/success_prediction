@@ -25,3 +25,4 @@
 **/values.dev.yaml
 **/out
 README.md
+dockerfiles/*
